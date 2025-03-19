@@ -1,0 +1,78 @@
+# https://roboticsbackend.com/ros-param-yaml-format/
+
+#====================================================
+# Steering Car Parameters
+#----------------------------------------------------
+# Distance between the front and the rear wheels 
+L: 0.155 # [m]
+
+#====================================================
+# Sampling time 
+#----------------------------------------------------
+Ts: 0.1 # [s]
+
+#====================================================
+# Initial control
+#----------------------------------------------------
+u_vector_0:
+  steering: 0.0
+  throttle: 0.0
+
+#====================================================
+# PD Parametes
+#----------------------------------------------------
+Kp_v: 1
+Kd_v: 0.1
+Kp_psi: 1
+Kd_psi: 0.1
+
+#====================================================
+# Gains and offsets of the steering car
+#----------------------------------------------------
+# https://www.waveshare.com/wiki/JetRacer_AI_Kit
+steering:
+  gain: 0.65
+  offset: 0.0 #-0.16
+
+throttle:
+  gain: 1
+
+#====================================================
+# Path Excel Reference File
+#----------------------------------------------------
+# (line)
+path_excel_file: "/home/marcone/Desktop/elisa/catkin_ws/src/steering_car_ekf_mpc/excel/referenceLine.xlsx"
+#/home/aurelien/flair/my_src/ros1_ws/src/steering_car_pd/config/traj.xlsx
+
+# (circle)
+# path_excel_file: "/home/marcone/Desktop/elisa/catkin_ws/src/steering_car_ekf_mpc/excel/referenceCircle2m.xlsx"
+
+# (bernoulli)
+# path_excel_file: "/home/marcone/Desktop/elisa/catkin_ws/src/steering_car_ekf_mpc/excel/referenceBernoulli2m.xlsx"
+
+#====================================================
+# Duration of the simlation in seconds
+#----------------------------------------------------
+# (line)
+stop_time: 10
+
+# (circle and bernoulli)
+# stop_time: 60
+
+#====================================================
+# Losses parameters
+#----------------------------------------------------
+# (Line)
+start_losses_time: 5
+stop_losses_time: 10
+
+# (Circle and Benoulli)
+# start_losses_time: 30 
+# stop_losses_time: 35
+
+# NO losses (1h almost infinity)
+# start_losses_time: 3600
+# stop_losses_time: 3600
+
+
+
