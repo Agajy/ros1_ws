@@ -48,7 +48,7 @@ throttle:
 
 # (bernoulli)
 #path_excel_file: "/home/marcone/Desktop/elisa/catkin_ws/src/steering_car_ekf_mpc/excel/referenceBernoulli2m.xlsx"
-path_excel_file: "/home/aurelien/flair/my_src/ros1_ws/src/trajectory/config/output2.xlsx"
+path_excel_file: "/home/aurelien/flair/my_src/ros1_ws/src/trajectory/config/output.xlsx"
 
 #====================================================
 # Duration of the simlation in seconds

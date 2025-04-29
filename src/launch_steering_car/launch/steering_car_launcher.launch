@@ -6,7 +6,7 @@
 
     <!-- To retrieve OptiTrack data -->
     <arg name="server" default="172.26.213.1"/>
-    <!-- <node pkg="vrpn_client_ros" type="vrpn_client_node" name="vrpn_client_node" output="screen">
+    <node pkg="vrpn_client_ros" type="vrpn_client_node" name="vrpn_client_node" output="screen">
     <rosparam subst_value="true">
         server: $(arg server)
         port: 3883
@@ -18,7 +18,7 @@
         #- FirstTracker
         #- SecondTracker
     </rosparam>
-    </node> -->
+    </node>
     
     <!-- To retrieve the right orientation 
     <node name="measure_orientation" pkg="steering_car_pd" type="node_get_orientation_from_pose.py" output="screen">

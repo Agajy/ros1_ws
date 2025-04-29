@@ -22,7 +22,6 @@ class SteeringCarMainNode:
 
         # Initialize the subscriber to the Optitrack
         rospy.Subscriber("/vrpn_client_node/target/pose", PoseStamped, self.__callback_vrpn)
-        rospy.Subscriber("/orientation/euler",Vector3, self.__callback_orientation)
 
         # Initialize the subscriber to the STOP message
         rospy.Subscriber("/steering_car/STOP",String,self.__callback_stop_emergency)
@@ -34,6 +33,7 @@ class SteeringCarMainNode:
         self.current_vrpn_msg = PoseStamped()
         self.current_orientation = 0
         self.pose_reference = np.zeros(3)
+        self.last_pose_reference = np.zeros(3)
         self.pose=np.zeros(3)
         self.last_pose=np.zeros(3)
         # test=0
@@ -43,8 +43,8 @@ class SteeringCarMainNode:
         #     test+=1
         #     rospy.loginfo(f"in the boucle: {test}")
         #     try :
-        #         self.pose_reference = self.__calculateRearPoint(self.current_vrpn_msg)
-        #         self.pose = self.__calculateRearPoint(self.current_vrpn_msg)
+        #         self.pose_reference = self.__state_vector(self.current_vrpn_msg)
+        #         self.pose = self.__state_vector(self.current_vrpn_msg)
         #     except:
         #         continue
 
@@ -141,19 +141,53 @@ class SteeringCarMainNode:
 
     # Modify to change the controller
     def control_callback(self,event):
-        self.pose=self.__calculateRearPoint(self.current_vrpn_msg)
+        self.pose=self.__state_vector(self.current_vrpn_msg)
         dx=(self.pose_reference[0]-self.pose[0])
         dy=(self.pose_reference[1]-self.pose[1])
-        dpsi=self.pose_reference[2]-self.pose[2]
-        self.vel=sqrt((pow(self.pose[0]-self.last_pose[0],2)+pow(self.pose[1]-self.last_pose[1],2)))/self.Ts
+        dpsi=self.angle_between_vectors_xy(self.pose_reference-self.last_pose_reference, self.pose[2])
 
+        p_pose_reference_dif = self.pose_reference-self.last_pose_reference
+        dpsi_pose_reference = np.arctan2( p_pose_reference_dif[1],  p_pose_reference_dif[0])
+        p_pose_dif = self.pose-self.last_pose
+        dpsi_ugv=np.arctan2( p_pose_dif[1],  p_pose_dif[0])
+        # print("angles: ", np.rad2deg(dpsi_ugv_target), np.rad2deg(dpsi_feature_target))
+        #
+        dpsi =  dpsi_pose_reference - dpsi_ugv
+
+
+
+        self.vel=sqrt((pow(self.pose[0]-self.last_pose[0],2)+pow(self.pose[1]-self.last_pose[1],2)))/self.Ts
+   
         self.throttle_msg.data, self.steering_msg.data=self.ugvControl(dx,dy,dpsi,self.Ts)
         self.throttle_pub.publish(self.throttle_msg)
         self.steering_pub.publish(self.steering_msg)
         self.last_pose=self.pose
+        self.last_pose_reference=self.pose_reference
         u_k=np.array([self.throttle_msg,self.steering_msg])
-        rospy.loginfo(f"receive :\n   position {self.pose},\n   position_desired {self.pose_reference},\n send:\n   {u_k}")
+        rospy.loginfo(f"receive :\n   position {self.pose},\n   position_desired {self.pose_reference},\n error:\n  {dx},{dy},{dpsi},\n   send:\n   {u_k}")
 
+    def angle_between_vectors_xy(self,v1, v2):
+        # Projection des vecteurs sur le plan XY
+        v1_xy = np.array([v1[0], v1[1]])
+        v2_xy = np.array([0, 1])
+        
+        # Calcul du produit scalaire
+        dot_product = np.dot(v1_xy, v2_xy)
+        
+        # Calcul des normes
+        norm_v1 = np.linalg.norm(v1_xy)
+        norm_v2 = np.linalg.norm(v2_xy)
+        
+        # Éviter la division par zéro
+        if norm_v1 == 0:
+            norm_v1=1.0
+        
+        # Calcul de l'angle en radians
+        cos_theta = np.clip(dot_product / (norm_v1 * norm_v2), -1.0, 1.0)
+        angle = np.arccos(cos_theta)
+        
+        # Conversion en degrés
+        return angle-v2
 
     
     def reference_callback(self,event):
@@ -175,11 +209,8 @@ class SteeringCarMainNode:
     def __callback_vrpn(self, msg):
         self.pose_reference_init=True
         self.current_vrpn_msg = msg
-        
-    def __callback_orientation(self, msg):
-        self.current_orientation = msg.y
-       
-    def __calculateRearPoint(self, msg):
+             
+    def __state_vector(self, msg):
         # The Optitrack measures the center of the steering car
         x_c = msg.pose.position.x
         y_c = -msg.pose.position.z
@@ -187,10 +218,8 @@ class SteeringCarMainNode:
         orientation_list = [msg.pose.orientation.x, -msg.pose.orientation.z, msg.pose.orientation.y, msg.pose.orientation.w]
         (roll, pitch, yaw) = euler_from_quaternion(orientation_list)
                     
-        # The model considers the center of the rear axis
-        x = x_c - (self.L/2) * np.cos(yaw)
-        y = y_c - (self.L/2) * np.sin(yaw)
-        x_k = np.array([x, y, yaw])  
+        # The model considers the center of the robot
+        x_k = np.array([x_c, y_c, yaw])  
         
         return x_k 
 

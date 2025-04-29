@@ -20,6 +20,7 @@ class SteeringCarMainNode:
 
         # Initialize the subscriber to the Optitrack
         rospy.Subscriber("/vrpn_client_node/target/pose", PoseStamped, self.__callback_vrpn)
+        rospy.Subscriber("/vrpn_client_node/Drone_0/pose", PoseStamped, self.__callback_vrpn_drone)
         rospy.Subscriber("/orientation/euler",Vector3, self.__callback_orientation)
 
         # Initialize the subscriber to the STOP message
@@ -30,24 +31,25 @@ class SteeringCarMainNode:
         self.debug_ref_pub = rospy.Publisher("/steering_car/reference",Vector3,queue_size=10)
 
         self.current_vrpn_msg = PoseStamped()
+        self.current_vrpn_drone = PoseStamped()
         self.current_orientation = 0
         self.pose_reference = np.zeros(3)
         self.pose=np.zeros(3)
-        # test=0
-        # # Initialize first desired position
-        # self.pose_reference_init = False
-        # while self.pose_reference_init==False:
-        #     test+=1
-        #     rospy.loginfo(f"in the boucle: {test}")
-        #     try :
-        #         self.pose_reference = self.__calculateRearPoint(self.current_vrpn_msg)
-        #         self.pose = self.__calculateRearPoint(self.current_vrpn_msg)
-        #     except:
-        #         continue
+        test=0
+        # Initialize first desired position
+        self.pose_reference_init = False
+        while self.pose_reference_init==False:
+            test+=1
+            rospy.loginfo(f"in the boucle: {test}")
+            try :
+                self.pose_reference = self.__calculateRearPoint(self.current_vrpn_msg)
+                self.pose = self.__calculateRearPoint(self.current_vrpn_msg)
+            except:
+                continue
 
         # Sampling time and timer
         self.Ts = rospy.get_param('Ts')
-        rospy.Timer(rospy.Duration(self.Ts), self.reference_callback)
+        # rospy.Timer(rospy.Duration(self.Ts), self.reference_callback)
         rospy.Timer(rospy.Duration(self.Ts), self.control_callback)
 
         # Distance between front and rear wheels
@@ -85,25 +87,24 @@ class SteeringCarMainNode:
 
     # Modify to change the controller
     def control_callback(self,event):
+        self.pose_reference=self.__calculateUAVPoint(self.current_vrpn_drone)
         self.pose=self.__calculateRearPoint(self.current_vrpn_msg)
         u_k = self.my_steering_car_pd.compute_control_action(self.pose, self.pose_reference)
         self.my_controls_publisher.publish_control_inputs(u_k)
         rospy.loginfo(f"receive :\n   position {self.pose},\n   position_desired {self.pose_reference},\n send:\n   {u_k}")
-
-
-    
-    def reference_callback(self,event):
-        service_name="u_position_d"
-        rospy.wait_for_service(service_name)
-        rospy.loginfo("new_pose")
-        try:
-            service_proxy = rospy.ServiceProxy(service_name, GetPose)
-            reponse = service_proxy()
-            pose_reference=reponse.pose
-            # rospy.loginfo(f"Response from {service_name}: {self.pose_reference}")
-            self.pose_reference = np.array([pose_reference.position.x, pose_reference.position.y, pose_reference.position.z])
-        except rospy.ServiceException as e:
-            rospy.logerr(f"Service call failed: {e}")
+   
+    # def reference_callback(self,event):
+    #     service_name="u_position_d"
+    #     rospy.wait_for_service(service_name)
+    #     rospy.loginfo("new_pose")
+    #     try:
+    #         service_proxy = rospy.ServiceProxy(service_name, GetPose)
+    #         reponse = service_proxy()
+    #         pose_reference=reponse.pose
+    #         # rospy.loginfo(f"Response from {service_name}: {self.pose_reference}")
+    #         self.pose_reference = np.array([pose_reference.position.x, pose_reference.position.y, pose_reference.position.z])
+    #     except rospy.ServiceException as e:
+    #         rospy.logerr(f"Service call failed: {e}")
         
     def __callback_stop_emergency(self, msg):
         self.stop_emergency = True
@@ -111,7 +112,11 @@ class SteeringCarMainNode:
     def __callback_vrpn(self, msg):
         self.pose_reference_init=True
         self.current_vrpn_msg = msg
-        
+    
+    def __callback_vrpn_drone(self, msg):
+        self.pose_reference_init=True
+        self.current_vrpn_drone = msg
+
     def __callback_orientation(self, msg):
         self.current_orientation = msg.y
        
@@ -127,6 +132,18 @@ class SteeringCarMainNode:
         x = x_c - (self.L/2) * np.cos(yaw)
         y = y_c - (self.L/2) * np.sin(yaw)
         x_k = np.array([x, y, yaw])  
+        
+        return x_k
+    
+    def __calculateUAVPoint(self, msg):
+        # The Optitrack measures the center of the steering car
+        x_c = msg.pose.position.x
+        y_c = -msg.pose.position.z
+        
+        orientation_list = [msg.pose.orientation.x, -msg.pose.orientation.z, msg.pose.orientation.y, msg.pose.orientation.w]
+        (roll, pitch, yaw) = euler_from_quaternion(orientation_list)
+                    
+        x_k = np.array([x_c, y_c, yaw])  
         
         return x_k 
 
