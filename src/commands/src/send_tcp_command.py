@@ -4,7 +4,7 @@ import numpy
 from math import *
 import rospy
 import tf
-from std_msgs.msg import Float64, Float32
+from std_msgs.msg import Float64, Float32, Bool
 from geometry_msgs.msg import PoseStamped, Vector3, Pose
 import tf.transformations
 import socket
@@ -12,14 +12,18 @@ import sys
 import time
 import threading
 
-class SendUAVCommand(object):
+class SendTCPCommand(object):
     def __init__(self):
-        rospy.init_node("Send_UAV_Command")
+        rospy.init_node("Send_by TCP_Command")
         self.in_simu = rospy.get_param('~in_simu', False)
         self.host = '127.0.0.1' if self.in_simu else rospy.get_param('~host', '172.26.209.13')
         self.port = rospy.get_param('~port', 62732)
         
-        self._error_pose_sub = rospy.Subscriber("error_pose", PoseStamped, self.error_pose_callback, queue_size=1)
+        self.object_to_command = rospy.get_param('~object_to_command')
+        self.command_topic = f"/error_pose/{self.object_to_command}/pose"
+        self._error_pose_sub = rospy.Subscriber(self.command_topic, PoseStamped, self.error_pose_callback, queue_size=1)
+
+        self._publisher_state = rospy.Publisher(f"/state/{self.object_to_command}", Bool, queue_size=1)
         
         self._ex = 0.0
         self._ey = 0.0
@@ -35,7 +39,7 @@ class SendUAVCommand(object):
         self.connection_thread.daemon = True
         self.connection_thread.start()
         
-        rospy.loginfo("SendUAVCommand initialized")
+        rospy.loginfo("Send TCP Command initialized")
     
     def euler_from_quaternion(self,x, y, z, w):
         """
@@ -108,7 +112,16 @@ class SendUAVCommand(object):
                     try:
                         data = self.sock.recv(16)
                         if data:
-                            rospy.logdebug(f"Received: {data.decode()}")
+                            response = data.decode()
+                            if response == "True":
+                                rospy.loginfo("Command accepted and will be executed")
+                                self._publisher_state.publish(True)
+                            elif response == "False":
+                                rospy.logwarn("Command rejected")
+                                self._publisher_state.publish(False)
+                            else:
+                                rospy.logwarn(f"Unexpected response: {response}")
+                                self._publisher_state.publish(False)
                         else:
                             # Connection fermée par le serveur
                             raise Exception("Connection closed by server")
@@ -139,7 +152,7 @@ class SendUAVCommand(object):
         rospy.spin()
 
 def main():
-    node = SendUAVCommand()
+    node = SendTCPCommand()
     node.spin()
 
 # main
