@@ -49,7 +49,7 @@ class SteeringCarMainNode:
 
         # Sampling time and timer
         self.Ts = rospy.get_param('Ts')
-        # rospy.Timer(rospy.Duration(self.Ts), self.reference_callback)
+        rospy.Timer(rospy.Duration(self.Ts), self.reference_callback)
         rospy.Timer(rospy.Duration(self.Ts), self.control_callback)
 
         # Distance between front and rear wheels
@@ -93,18 +93,18 @@ class SteeringCarMainNode:
         self.my_controls_publisher.publish_control_inputs(u_k)
         rospy.loginfo(f"receive :\n   position {self.pose},\n   position_desired {self.pose_reference},\n send:\n   {u_k}")
    
-    # def reference_callback(self,event):
-    #     service_name="u_position_d"
-    #     rospy.wait_for_service(service_name)
-    #     rospy.loginfo("new_pose")
-    #     try:
-    #         service_proxy = rospy.ServiceProxy(service_name, GetPose)
-    #         reponse = service_proxy()
-    #         pose_reference=reponse.pose
-    #         # rospy.loginfo(f"Response from {service_name}: {self.pose_reference}")
-    #         self.pose_reference = np.array([pose_reference.position.x, pose_reference.position.y, pose_reference.position.z])
-    #     except rospy.ServiceException as e:
-    #         rospy.logerr(f"Service call failed: {e}")
+    def reference_callback(self,event):
+        service_name="u_position_d"
+        rospy.wait_for_service(service_name)
+        rospy.loginfo("new_pose")
+        try:
+            service_proxy = rospy.ServiceProxy(service_name, GetPose)
+            reponse = service_proxy()
+            pose_reference=reponse.pose
+            # rospy.loginfo(f"Response from {service_name}: {self.pose_reference}")
+            self.pose_reference = np.array([pose_reference.position.x, pose_reference.position.y, pose_reference.position.z])
+        except rospy.ServiceException as e:
+            rospy.logerr(f"Service call failed: {e}")
         
     def __callback_stop_emergency(self, msg):
         self.stop_emergency = True

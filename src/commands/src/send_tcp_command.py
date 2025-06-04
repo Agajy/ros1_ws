@@ -60,16 +60,16 @@ class SendTCPCommand(object):
         t3 = +2.0 * (w * z + x * y)
         t4 = +1.0 - 2.0 * (y * y + z * z)
         yaw_z = math.atan2(t3, t4)
-     
+
         return roll_x, pitch_y, yaw_z # in radians
           
     def error_pose_callback(self, msg):
         self._ex = msg.pose.position.x
         self._ey = msg.pose.position.y
-        roll_x, pitch_y, self._eyaw = self.euler_from_quaternion(
-            msg.pose.orientation.x,msg.pose.orientation.y,msg.pose.orientation.z,msg.pose.orientation.w
-            )
-    
+        # roll_x, pitch_y, self._eyaw = self.euler_from_quaternion(
+        #     msg.pose.orientation.x,msg.pose.orientation.y,msg.pose.orientation.z,msg.pose.orientation.w
+        #     )
+        self._eyaw = msg.pose.orientation.z
     def connection_manager(self):
         """Thread qui gère la connexion et la reconnexion TCP"""
         while not rospy.is_shutdown():

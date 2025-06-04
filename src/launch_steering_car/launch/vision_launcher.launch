@@ -6,7 +6,7 @@
   <arg name="save" default="false" doc="Save frames to disk" />
   <arg name="save_dir" default="$(find vision_processing)/frames" doc="Directory to save frames" />
   <arg name="display" default="true" doc="Display images in OpenCV windows" /> -->
-
+  <rosparam command="load" file="$(find trajectory)/config/simulation_parameters.yaml"/>
   <arg name="in_simu" default="true" doc="Set to true for simulation (uses localhost)" />
   <arg name="host" default="172.26.209.13" doc="TCP server IP address (ignored if in_simu is true)" />
   <arg name="host_simu" default="127.0.0.1" doc="optitrack port simulation" />
@@ -34,6 +34,9 @@
   <node name="image_detector" pkg="vision_processing" type="image_detector.py" output="screen">
   </node>
 
+  <node name="gauss_filter_node" pkg="vision_processing" type="gauss_filter.py" output="screen">
+  </node>
+
   <node name="send_uav_command" pkg="commands" type="send_tcp_command.py" output="screen">
     <param name="in_simu" value="$(arg in_simu)" />
     <param name="host" value="$(arg host)" />
@@ -44,6 +47,12 @@
   <node name="optitrack_simu" pkg="simulation_flair" type="tcp_optitrack.py" output="screen">
     <param name="host" value="$(arg host_simu)" />
     <param name="port" value="$(arg port_optitrack)" />
+  </node>
+
+  <node name="decision" pkg="decision" type="decision.py" output="screen">
+  </node>
+
+  <node name="ibvs" pkg="vision_processing" type="ibvs_tag.py" output="screen">
   </node>
 
 </launch>
