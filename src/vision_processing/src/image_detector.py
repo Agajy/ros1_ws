@@ -2,6 +2,7 @@
 import rospy
 import tf
 from std_msgs.msg import Float64, Float32, Bool
+from skimage import morphology
 from geometry_msgs.msg import PoseStamped, Vector3, Pose, Point, PoseArray
 from visualization_msgs.msg import Marker
 import cv2
@@ -12,7 +13,8 @@ import numpy as np
 from skimage.morphology import skeletonize
 from scipy.signal import savgol_filter
 from math import *
-
+from scipy.interpolate import interp1d
+from scipy.spatial import cKDTree
 
 class LineAndArucoDetector:
     def __init__(self):
@@ -28,6 +30,7 @@ class LineAndArucoDetector:
         self.aruco_pose_pub = rospy.Publisher('/aruco_pose', PoseStamped, queue_size=10)
         self.aruco_corner_pub = rospy.Publisher('/aruco_corners', PoseArray, queue_size=10)
         self.aruco_detected_pub = rospy.Publisher('/aruco_detected', Bool, queue_size=10)
+        self.line_pub = rospy.Publisher('/line_path', PoseArray, queue_size=10)
 
         # Paramètres image
         self.largeur = 640
@@ -58,12 +61,17 @@ class LineAndArucoDetector:
             
         # Mettre à jour les dimensions d'image
         self.hauteur, self.largeur = cv_image.shape[:2]
+
+        cv_image2 = cv2.GaussianBlur(cv_image, (5, 5), 0)
+        kernel = np.ones((3, 3), np.uint8)
+        # cv_image2 = cv2.erode(cv_image, kernel, iterations=1)
+        # cv_image2 = cv2.dilate(blurred, kernel, iterations=1)
         
         # Créer une version couleur pour l'affichage
         cv_display = cv2.cvtColor(cv_image, cv2.COLOR_GRAY2BGR)
         
         # Traitement des lignes (votre code existant)
-        self.process_lines(cv_image, cv_display)
+        self.process_lines(cv_image2, cv_display)
         
         # Détection ArUco améliorée
         self.detect_aruco(cv_image, cv_display)
@@ -79,6 +87,7 @@ class LineAndArucoDetector:
         thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, np.ones((3,3), np.uint8))
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
+
         nombre_lignes = 0
         all_skeleton_points = []
         
@@ -88,44 +97,123 @@ class LineAndArucoDetector:
                 
             # Masque et ROI
             mask = np.zeros_like(cv_image, dtype=np.uint8)
-            cv2.drawContours(mask, [contour], 0, 255, 0)
-            x, y, w, h = cv2.boundingRect(contour)
-            
-            skeleton = skeletonize(mask[y:y+h, x:x+w])
-            skeleton_coords = np.column_stack(np.where(skeleton))
-            
-            if skeleton_coords.size == 0:
-                continue
+            cv2.drawContours(mask, [contour], 0, 255, -1)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5,5), np.uint8))
+            # Skeletonize the image
+            skeleton = morphology.skeletonize(mask > 0)
+            # Find the centerline from the skeleton
+            skeleton = skeleton.astype(np.uint8) * 255
+            # Find the contours of the skeleton
+            contours, _ = cv2.findContours(skeleton, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            # Extract points from contour
+            if len(contours) > 0:
+                # Convertir contour en array
+                coords = []
+                for cnt in contours:
+                    points = cnt.squeeze()
+                    coords.extend(points.tolist())
                 
-            nombre_lignes += 1
+                coords = np.array(coords)
+                if len(coords) > 0:
+                    all_skeleton_points.append(coords)
+
+                    # points squelette
+                    for point in coords:
+                        cv2.circle(cv_display, (int(point[0]), int(point[1])), 2, (0, 255, 0), -1)
+
+
+        if all_skeleton_points:
+            sorted_skeletons = sorted(all_skeleton_points, key=len, reverse=True)
+            longest_skeleton = np.array(sorted_skeletons[0])
             
-            # Affichage des points
-            coords = []
-            for j, i in skeleton_coords:
-                cv_display[y + j, x + i] = (0, 0, 255)
-                coords.append((x + i, y + j))
+            # squelette le plus long en jaune
+            for point in longest_skeleton:
+                cv2.circle(cv_display, (int(point[0]), int(point[1])), 3, (0, 255, 255), -1)
             
-            all_skeleton_points.append(coords)
-        
-        # Calcul de la ligne centrale
+            list_dist_middle_low_point_to_path = []
+            for skeleton in sorted_skeletons:
+                skeleton = np.array(skeleton)
+                for point in skeleton:
+                    min_dist = np.linalg.norm(longest_skeleton - point, axis=1).min()
+                    list_dist_middle_low_point_to_path.append(min_dist)
+            
+            idx_min = np.argmin(list_dist_middle_low_point_to_path)
+            selected_skeleton = np.array(sorted_skeletons[idx_min])
+            
+            # squelette sélectionné en magenta
+            for point in selected_skeleton:
+                cv2.circle(cv_display, (int(point[0]), int(point[1])), 4, (255, 0, 255), -1)
+            
+
+        # Calcul de la ligne centrale si deux squelettes
         if len(all_skeleton_points) >= 2:
             sorted_skeletons = sorted(all_skeleton_points, key=len, reverse=True)
             skeleton_1 = np.array(sorted_skeletons[0])
             skeleton_2 = np.array(sorted_skeletons[1])
             
             if len(skeleton_1) > 0 and len(skeleton_2) > 0:
-                iteration_min = min(len(skeleton_1), len(skeleton_2))
-                central_curve_points = []
+                tree = cKDTree(skeleton_2)
+                distances, indices = tree.query(skeleton_1)
+                central_curve_points = (skeleton_1 + skeleton_2[indices]) / 2
+                for x, y in central_curve_points:
+                    cv2.circle(cv_display, (int(x), int(y)), 2, (255, 255, 255), -1)
+
+                # iteration_min = min(len(skeleton_1), len(skeleton_2))
+                # central_curve_points = []
+                # x_common = np.linspace(0, self.largeur, self.largeur)
+                # f1 =np.poly1d(np.polyfit(skeleton_1[:,0], skeleton_1[:,1], 3))
+                # f2 = np.poly1d(np.polyfit(skeleton_2[:,0], skeleton_2[:,1], 3))
+               
+
+
+                #     # f1 = interp1d(skeleton_1[:,0], skeleton_1[:,1], kind='cubic', fill_value="extrapolate")
+                #     # f2 = interp1d(skeleton_2[:,0], skeleton_2[:,1], kind='cubic', fill_value="extrapolate")
+
+                # y1_interp = f1(x_common)
+                # y2_interp = f2(x_common)
+
+                # # Courbe milieu
+                # y_common = (y1_interp + y2_interp) / 2
+                    
+                # x_center = x_common
+                # y_center = y_common
                 
-                for idx in range(1, iteration_min):
-                    x_center = (skeleton_1[-idx,0] + skeleton_2[-idx,0]) / 2
-                    y_center = (skeleton_1[-idx,1] + skeleton_2[-idx,1]) / 2
-                    central_curve_points.append((x_center, y_center, 0.0))
+                # # Check bounds for each point and create central curve points
+                # valid_points = np.logical_and.reduce([
+                #     x_center >= 0,
+                #     x_center < self.largeur,
+                #     y_center >= 0,
+                #     y_center < self.hauteur
+                # ])
                 
-                if central_curve_points:
-                    central_curve = np.array(central_curve_points)
-                    original_marker = self.create_line_marker(central_curve, 0, 1.0, 0.0, 0.0, "original_curve")
-                    self.original_pub.publish(original_marker)
+                # central_curve_points = np.column_stack((x_center[valid_points], y_center[valid_points]))
+                
+                # # Draw points
+                # for x, y in central_curve_points:
+                #     cv2.circle(cv_display, (int(x), int(y)), 2, (255, 255, 0), -1)
+
+                # if len(central_curve_points) > 0:
+                #     original_marker = self.create_line_marker(central_curve_points, 0, 1.0, 0.0, 0.0, "original_curve")
+                #     self.original_pub.publish(original_marker)
+
+
+            # # courbe polynomiale en blanc
+            # if len(central_curve_points) >= 4:
+            #     central_curve_points = np.array(central_curve_points)
+            #     selected_line = np.poly1d(np.polyfit(central_curve_points[:, 0], central_curve_points[:, 1], 3))
+            #     x_points = np.linspace(min(central_curve_points[:, 0]), max(central_curve_points[:, 0]), 50)
+            #     y_points = selected_line(x_points)
+            #     path_points = np.column_stack((x_points, y_points))
+            #     for i in range(len(path_points)-1):
+            #         pt1 = (int(path_points[i][0]), int(path_points[i][1]))
+            #         pt2 = (int(path_points[i+1][0]), int(path_points[i+1][1]))
+            #         cv2.line(cv_display, pt1, pt2, (255, 255, 255), 3)
+                
+            #     self.publish_path(path_points)
+
+        cv2.putText(cv_display, f"Squelettes: {len(all_skeleton_points)}", (10, 60), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
     def detect_aruco(self, cv_image, cv_display):
         """Détection ArUco améliorée"""
@@ -197,16 +285,39 @@ class LineAndArucoDetector:
             corner_pose.position.y = y_pixel
             corner_pose.position.z = 0.0
             
+            # Calculer l'angle d'orientation
+            dx = corners[1][0] - corners[0][0]
+            dy = corners[1][1] - corners[0][1]
+            angle = np.arctan2(dy, dx)
+
             # Orientation par défaut
             corner_pose.orientation.x = 0.0
             corner_pose.orientation.y = 0.0
-            corner_pose.orientation.z = 0.0
+            corner_pose.orientation.z = angle
             corner_pose.orientation.w = 1.0
             
             pose_array.poses.append(corner_pose)
         
         self.aruco_corner_pub.publish(pose_array)
-
+    
+    def publish_path(self, path_points):
+        pose_array = PoseArray()
+        pose_array.header.frame_id = "camera_frame"
+        pose_array.header.stamp = rospy.Time.now()
+        n_points = len(path_points)
+        need_n_points = 3
+        dn= n_points // need_n_points
+        for i in range(0, n_points, 1):
+            if i < n_points:
+                point = path_points[i]
+                pose = Pose()
+                pose.position = Point(x=point[0], y=point[1], z=0.0)
+                pose.orientation.w = 1.0
+                pose_array.poses.append(pose)
+        # if len(pose_array.poses) == 4:
+            # self.line_pub.publish(pose_array)
+        self.line_pub.publish(pose_array)
+        
     def publish_aruco_pose(self, rvec, tvec, marker_id):
         """Publie la pose 3D du marqueur ArUco"""
         pose_msg = PoseStamped()

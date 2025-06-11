@@ -6,9 +6,12 @@
 
     
     <node name="main_node" pkg="pd_controller" type="steering_car_main_node.py" output="screen">
+        <param name="use_sim_time" value="true" />
+
     </node>
 
     <node name="trajectory_node" pkg="trajectory" type="trajectory_node.py" output="screen">
+        <param name="use_sim_time" value="true" />
     </node>
     
 </launch>

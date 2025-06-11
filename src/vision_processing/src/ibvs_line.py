@@ -10,13 +10,11 @@ from math import *
 
 class IBVS:
     def __init__(self):
-        rospy.init_node('ibvs_tag_node', anonymous=True)
+        rospy.init_node('ibvs_line_node', anonymous=True)
 
         # Subscribers
-        self.original_sub = rospy.Subscriber('/original_curve', Marker, self.curve_callback)
-        self.aruco_pose_sub = rospy.Subscriber('/aruco_pose', PoseStamped, self.aruco_pose_callback)
-        self.aruco_detected_sub = rospy.Subscriber('/aruco_detected', Bool, self.aruco_detected_callback)
-        self.aruco_corner_sub = rospy.Subscriber('/aruco_corners', PoseArray, self.aruco_corner_callback)
+        self.aruco_detected_sub = rospy.Subscriber('/line_detected', Bool, self.aruco_detected_callback)
+        self.aruco_corner_sub = rospy.Subscriber('/line_path', PoseArray, self.aruco_corner_callback)
         
         # Publishers
         self.error_tag = rospy.Publisher('/target_pose', PoseStamped, queue_size=10)
