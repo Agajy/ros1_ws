@@ -48,19 +48,19 @@ class IBVS:
             [-half_size, half_size, half_size, -half_size, half_size, half_size, -half_size, -half_size]    
         ], dtype=np.float32).T  # (8,1)
         self._s_matrix = np.zeros((8, 1), dtype=np.float32)
+        self.current_trajectory = None
 
         # Paramètres caméra 
         self.focal_x = 314.9937259674355
         self.focal_y = 314.5862387824696
         self.center_x = 146.24621020976434 
         self.center_y = 128.53019044749945
-        self.image_width = 640
-        self.image_height = 480
+        self.image_width = 320
+        self.image_height = 240
 
         # Gain pour le contrôle
         self.lambda_gain = 1.0
-
-        self.yaw = 0.0  # Initialisation de l'angle de lacet
+        self.gain_z = 0.5
 
         # Timer pour le contrôle
         rospy.Timer(rospy.Duration(0.1), self.control_loop)
@@ -114,13 +114,11 @@ class IBVS:
         self.line_state_past = self.line_state
         self.line_state = True if data.data > 0 else False
 
-    def aruco_pose_callback(self, data):
-        """Callback pour la pose du tag ArUco"""
-        self.pose_tag_camera = data.pose
-
-    def curve_callback(self, data):
-        """Callback pour la courbe détectée"""
-        self.curve = np.array([[point.x, point.y, point.z] for point in data.points])
+    def pixel_to_camera_coordinates(self, u, v):
+        """Convertit les coordonnées pixel en coordonnées caméra normalisées"""
+        x_cam = u / self.focal_x
+        y_cam = v / self.focal_y
+        return x_cam, y_cam
 
     def control_loop(self, event):
         """Boucle de contrôle principale"""
@@ -136,13 +134,19 @@ class IBVS:
                 command_msg = PoseStamped()
                 command_msg.header.stamp = rospy.Time.now()
                 command_msg.header.frame_id = "drone_frame"
-                command_msg.pose = control_command
+
+                command_msg.pose.position.x = control_command.position.x
+                command_msg.pose.position.y = control_command.position.y
+                command_msg.pose.orientation.z = self.gain_z  * control_command.orientation.z
+
+                np.clip(command_msg.pose.position.x, -0.1, 0.1, out=command_msg.pose.position.x)
+                np.clip(command_msg.pose.position.y, -0.1, 0.1, out=command_msg.pose.position.y)
+                np.clip(command_msg.pose.orientation.z, -pi/60, pi/60, out=command_msg.pose.orientation.z)
                 
                 self.error_tag.publish(command_msg)
                 
-                # Debug
-                rospy.loginfo_throttle(1.0, f"Commande publiée: x={control_command.position.x:.3f}, "
-                                      f"y={control_command.position.y:.3f}, rx={control_command.orientation.x:.3f}, ry={control_command.orientation.y:.3f}, rz={control_command.orientation.z:.3f}, rw={control_command.orientation.w:.3f}")
+                # Afficher les commandes dans les logs
+                rospy.loginfo(f"Commande publiée: x={control_command.position.x:.3f}, y={control_command.position.y:.3f}, yaw={control_command.orientation.z:.3f}")
                 
         except Exception as e:
             rospy.logerr(f"Erreur dans la boucle de contrôle: {e}")
@@ -170,13 +174,62 @@ class IBVS:
         
         # Transformer dans le repère drone
         drone_command = self.transform_camera_to_drone(velocity_camera)
+
+        
+        # Commande d'orientation
+        reference_point = (int(self.image_width/2), int(self.image_height/2))
+        closest_point,idx = self.find_closest_trajectory_point(reference_point)
+
+        if idx+1 >= len(self.current_trajectory.poses):
+            n_x_pixels = closest_point[0]- self.current_trajectory.poses[idx-1].position.x
+            n_y_pixels = closest_point[1] - self.current_trajectory.poses[idx-1].position.y
+        else:
+            n_x_pixels = self.current_trajectory.poses[idx+1].position.x - closest_point[0]
+            n_y_pixels = self.current_trajectory.poses[idx+1].position.y - closest_point[1]
+
+        n_x_pixels, n_y_pixels = self.pixel_to_camera_coordinates(
+            n_x_pixels,
+            n_y_pixels
+        )
+
+        drone_command.orientation.z = np.arctan2( -n_x_pixels, n_y_pixels) #np.arctan2(n_x_pixels, n_y_pixels)
         
         return drone_command
     
+    def find_closest_trajectory_point(self, reference_point):
+        """Trouve le point de trajectoire le plus proche du point de référence"""
+        if not self.current_trajectory or len(self.current_trajectory.poses) == 0:
+            return None
+            
+        min_distance = float('inf')
+        closest_point = None
+        idx = 0
+        min_idx=0
+        
+        for pose in self.current_trajectory.poses:
+            # Convertir la pose 3D en coordonnées image (projection simple)
+            # Ici on suppose que les coordonnées de la trajectoire sont déjà en pixels
+            # Si elles sont en coordonnées monde, il faudrait appliquer la transformation appropriée
+            traj_x = pose.position.x
+            traj_y = pose.position.y
+            
+            # Calculer la distance euclidienne
+            distance = np.sqrt((traj_x - reference_point[0])**2 + (traj_y - reference_point[1])**2)
+            idx += 1
+            if distance < min_distance:
+                min_distance = distance
+                closest_point = (traj_x, traj_y)
+                min_idx = idx
+                
+        return closest_point, min_idx
+    
     def line_path_callback(self, data):
+        
         if not self.line_state:
+            self.current_trajectory = None
             return
-
+        self.current_trajectory = data
+        
         # Calcul du point appartenant à la courbe le plus proche du centre de l'image
         list_position = [(data.poses[i].position.x, data.poses[i].position.y) for i in range(len(data.poses))]
 
@@ -288,7 +341,6 @@ class IBVS:
         list_position = [point1, point2, point3, point4]
         
         self._s_matrix = np.zeros((8, 1), dtype=np.float32)
-        self.yaw = self.direction
 
         # Conversion des coordonnées pixel en coordonnées normalisées métriques
         for i in range(4):
@@ -300,9 +352,6 @@ class IBVS:
             
             self._s_matrix[i, 0] = x_norm      # x des coins
             self._s_matrix[i+4, 0] = y_norm    # y des coins
-        
-        rospy.logdebug(f"Direction: {self.direction:.3f} rad ({degrees(self.direction):.1f}°)")
-        rospy.logdebug(f"Coins normalisés: x={self._s_matrix[:4].flatten()}, y={self._s_matrix[4:].flatten()}")
 
 
     def transform_camera_to_drone(self, velocity_camera):
@@ -315,40 +364,16 @@ class IBVS:
             [0, 0, 0, 1]
         ], dtype=np.float32)
 
-        rotation_matrix = camera_to_drone[:3, :3]
-        translation_velocities = rotation_matrix @ velocity_camera[:3].flatten()
-        rotation_velocities = rotation_matrix @ velocity_camera[3:].flatten()
-
+        translation_velocities = camera_to_drone[:3, :3] @ velocity_camera[:3].flatten()
+        
         command_pose = Pose()
         command_pose.position.x = translation_velocities[0]
         command_pose.position.y = translation_velocities[1]
         command_pose.position.z = translation_velocities[2]
         
-        # CORRECTION: Gestion des angles avec le bon repère
-        # Les vitesses angulaires sont dans le repère caméra transformé
-        roll = rotation_velocities[0]
-        pitch = rotation_velocities[1] 
-        yaw = rotation_velocities[2]
-        
-        # IMPORTANT: Vérifier que cette transformation correspond à votre setup
-        # Il se peut que vous deviez ajuster les signes ou l'ordre des axes
-        
-        # Limiter les rotations pour éviter les instabilités
-        max_rotation = 0.1
-        roll = np.clip(roll, -max_rotation, max_rotation)
-        pitch = np.clip(pitch, -max_rotation, max_rotation)
-        yaw = np.clip(yaw, -max_rotation, max_rotation)
-        
-        q = tf.transformations.quaternion_from_euler(roll, pitch, yaw)
-        command_pose.orientation.x = q[0]
-        command_pose.orientation.y = q[1]
-        command_pose.orientation.z = q[2]
-        command_pose.orientation.w = q[3]
-
-        # Debug pour vérifier les angles
-        rospy.logdebug(f"Angles envoyés - Roll: {degrees(roll):.1f}°, Pitch: {degrees(pitch):.1f}°, Yaw: {degrees(yaw):.1f}°")
-
         return command_pose
+    
+
 
 
 if __name__ == '__main__':

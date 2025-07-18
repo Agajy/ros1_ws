@@ -24,7 +24,7 @@ class TcpImageStreamNode:
         
         # Get parameters
         self.in_simu = rospy.get_param('~in_simu', False)
-        self.host = '127.0.0.1' if self.in_simu else rospy.get_param('~host', '172.26.209.13')
+        self.host = '127.0.0.1' if self.in_simu else rospy.get_param('~host', '172.26.209.28')
         self.port = rospy.get_param('~port', 62734)
         self.save = rospy.get_param('~save', False)
         self.save_dir = rospy.get_param('~save_dir', 'frames')

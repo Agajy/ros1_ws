@@ -31,10 +31,12 @@ class LineAndArucoDetector:
         self.aruco_corner_pub = rospy.Publisher('/aruco_corners', PoseArray, queue_size=10)
         self.aruco_detected_pub = rospy.Publisher('/aruco_detected', Bool, queue_size=10)
         self.line_pub = rospy.Publisher('/line_path', PoseArray, queue_size=10)
+        self.line_detected_pub = rospy.Publisher('/line_detected', Float32, queue_size=10)
+
 
         # Paramètres image
-        self.largeur = 640
-        self.hauteur = 480
+        self.largeur = 320
+        self.hauteur = 240
 
         # Configuration ArUco
         self.aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_250)
@@ -87,8 +89,6 @@ class LineAndArucoDetector:
         thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, np.ones((3,3), np.uint8))
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
-
-        nombre_lignes = 0
         all_skeleton_points = []
         
         for contour in contours:
@@ -145,7 +145,9 @@ class LineAndArucoDetector:
             for point in selected_skeleton:
                 cv2.circle(cv_display, (int(point[0]), int(point[1])), 4, (255, 0, 255), -1)
             
-
+        msg = Float32()
+        msg.data = len(all_skeleton_points)
+        self.line_detected_pub.publish(msg)
         # Calcul de la ligne centrale si deux squelettes
         if len(all_skeleton_points) >= 2:
             sorted_skeletons = sorted(all_skeleton_points, key=len, reverse=True)
@@ -158,60 +160,13 @@ class LineAndArucoDetector:
                 central_curve_points = (skeleton_1 + skeleton_2[indices]) / 2
                 for x, y in central_curve_points:
                     cv2.circle(cv_display, (int(x), int(y)), 2, (255, 255, 255), -1)
-
-                # iteration_min = min(len(skeleton_1), len(skeleton_2))
-                # central_curve_points = []
-                # x_common = np.linspace(0, self.largeur, self.largeur)
-                # f1 =np.poly1d(np.polyfit(skeleton_1[:,0], skeleton_1[:,1], 3))
-                # f2 = np.poly1d(np.polyfit(skeleton_2[:,0], skeleton_2[:,1], 3))
-               
-
-
-                #     # f1 = interp1d(skeleton_1[:,0], skeleton_1[:,1], kind='cubic', fill_value="extrapolate")
-                #     # f2 = interp1d(skeleton_2[:,0], skeleton_2[:,1], kind='cubic', fill_value="extrapolate")
-
-                # y1_interp = f1(x_common)
-                # y2_interp = f2(x_common)
-
-                # # Courbe milieu
-                # y_common = (y1_interp + y2_interp) / 2
-                    
-                # x_center = x_common
-                # y_center = y_common
-                
-                # # Check bounds for each point and create central curve points
-                # valid_points = np.logical_and.reduce([
-                #     x_center >= 0,
-                #     x_center < self.largeur,
-                #     y_center >= 0,
-                #     y_center < self.hauteur
-                # ])
-                
-                # central_curve_points = np.column_stack((x_center[valid_points], y_center[valid_points]))
-                
-                # # Draw points
-                # for x, y in central_curve_points:
-                #     cv2.circle(cv_display, (int(x), int(y)), 2, (255, 255, 0), -1)
-
-                # if len(central_curve_points) > 0:
-                #     original_marker = self.create_line_marker(central_curve_points, 0, 1.0, 0.0, 0.0, "original_curve")
-                #     self.original_pub.publish(original_marker)
-
-
-            # # courbe polynomiale en blanc
-            # if len(central_curve_points) >= 4:
-            #     central_curve_points = np.array(central_curve_points)
-            #     selected_line = np.poly1d(np.polyfit(central_curve_points[:, 0], central_curve_points[:, 1], 3))
-            #     x_points = np.linspace(min(central_curve_points[:, 0]), max(central_curve_points[:, 0]), 50)
-            #     y_points = selected_line(x_points)
-            #     path_points = np.column_stack((x_points, y_points))
-            #     for i in range(len(path_points)-1):
-            #         pt1 = (int(path_points[i][0]), int(path_points[i][1]))
-            #         pt2 = (int(path_points[i+1][0]), int(path_points[i+1][1]))
-            #         cv2.line(cv_display, pt1, pt2, (255, 255, 255), 3)
-                
-            #     self.publish_path(path_points)
-
+     
+            self.publish_path(central_curve_points)
+        elif len(all_skeleton_points) == 1:
+            skeleton = np.array(all_skeleton_points[0])
+            for point in skeleton:
+                cv2.circle(cv_display, (int(point[0]), int(point[1])), 3, (255, 255, 255), -1)
+            self.publish_path(skeleton)
         cv2.putText(cv_display, f"Squelettes: {len(all_skeleton_points)}", (10, 60), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
@@ -343,31 +298,6 @@ class LineAndArucoDetector:
         pose_msg.pose.orientation.w = quaternion[3]
         
         self.aruco_pose_pub.publish(pose_msg)
-
-    def create_line_marker(self, points, marker_id, r, g, b, ns="curve"):
-        """Crée un marqueur de ligne pour RViz"""
-        marker = Marker()
-        marker.header.frame_id = "map"
-        marker.header.stamp = rospy.Time.now()
-        
-        marker.ns = ns
-        marker.id = marker_id
-        marker.type = Marker.LINE_STRIP
-        marker.action = Marker.ADD
-        
-        marker.pose.orientation.w = 1.0
-        marker.scale.x = 0.1
-        
-        marker.color.r = r
-        marker.color.g = g
-        marker.color.b = b
-        marker.color.a = 1.0
-        
-        # Centrer les points
-        marker.points = [Point(x=p[0]-self.largeur/2, y=p[1]-self.hauteur/2, z=p[2] if len(p) > 2 else 0.0) 
-                        for p in points]
-        
-        return marker
 
 
 if __name__ == '__main__':

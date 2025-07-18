@@ -1,20 +1,25 @@
 <launch>
   <!-- Arguments -->
   <!-- <arg name="in_simu" default="false" doc="Set to true for simulation (uses localhost)" />
-  <arg name="host" default="172.26.209.13" doc="TCP server IP address (ignored if in_simu is true)" />
+  <arg name="host" default="172.26.209.28" doc="TCP server IP address (ignored if in_simu is true)" />
   <arg name="port" default="62734" doc="TCP server port" />
   <arg name="save" default="false" doc="Save frames to disk" />
   <arg name="save_dir" default="$(find vision_processing)/frames" doc="Directory to save frames" />
   <arg name="display" default="true" doc="Display images in OpenCV windows" /> -->
   <rosparam command="load" file="$(find trajectory)/config/simulation_parameters.yaml"/>
-  <arg name="in_simu" default="true" doc="Set to true for simulation (uses localhost)" />
-  <arg name="host" default="172.26.209.13" doc="TCP server IP address (ignored if in_simu is true)" />
+  <arg name="in_simu" default="false" doc="Set to true for simulation (uses localhost)" />
+  <arg name="host" default="172.26.209.28" doc="TCP server IP address (ignored if in_simu is true)" />
   <arg name="host_simu" default="127.0.0.1" doc="optitrack port simulation" />
 
   <arg name="port" default="62734" doc="TCP server port" />
   <arg name="port_command_uav" default="62732" doc="TCP server port" />
   <arg name="port_optitrack" default="62731" doc="TCP server port" />
-  <arg name="object_uav" default="uav" doc="Object to detect" />
+  <arg name="port_rec_command_uav" default="62733" doc="TCP server port for recording UAV commands" />
+  <arg name="port_rec_command_ugv" default="62735" doc="TCP server port for recording UGV commands" />
+
+  <arg name="object_uav" default="Drone_0" doc="Object to detect" />
+  <arg name="object_ugv" default="ugv" doc="Object to detect" />
+
 
   <arg name="save" default="false" doc="Save frames to disk" />
   <arg name="save_dir" default="$(find vision_processing)/frames" doc="Directory to save frames" />
@@ -34,9 +39,6 @@
   <node name="image_detector" pkg="vision_processing" type="image_detector.py" output="screen">
   </node>
 
-  <node name="gauss_filter_node" pkg="vision_processing" type="gauss_filter.py" output="screen">
-  </node>
-
   <node name="send_uav_command" pkg="commands" type="send_tcp_command.py" output="screen">
     <param name="in_simu" value="$(arg in_simu)" />
     <param name="host" value="$(arg host)" />
@@ -44,15 +46,76 @@
     <param name="object_to_command" value="$(arg object_uav)" />
   </node>
 
+  <!-- Noeud de réception des positions des objets simulé sur FL-AIR en simulation-->
   <node name="optitrack_simu" pkg="simulation_flair" type="tcp_optitrack.py" output="screen">
     <param name="host" value="$(arg host_simu)" />
     <param name="port" value="$(arg port_optitrack)" />
   </node>
 
+  <!-- Programe principal Node -->
   <node name="decision" pkg="decision" type="decision.py" output="screen">
   </node>
 
-  <node name="ibvs" pkg="vision_processing" type="ibvs_tag.py" output="screen">
+  <!-- Noeud de suivi de ligne -->
+  <node name="line_follower" pkg="vision_processing" type="line_follower_ibvs.py" output="screen">
+  </node>
+
+
+
+
+  <!-- Noeud d'enregistrement des poses -->
+  <node name="pose_recorder" pkg="save_data" type="pose_recorder.py" output="screen">
+      <rosparam param="topics">
+          - /vrpn_client_node/uav/pose
+          - /vrpn_client_node/ugv/pose
+          - /rec_command/uav/command
+          - /rec_command/ugv/command
+      </rosparam>
+      <param name="output_dir" value="$(env HOME)/pose_recordings" />
+  </node>
+  
+  <!-- Interface graphique pour contrôler l'enregistrement -->
+  <node name="pose_recorder_gui" pkg="save_data" type="pose_recorder_gui.py" output="screen" />
+
+  <!-- Noeud reception command UAV pour enregistrement -->
+  <node name="tcp_rec_command_uav" pkg="save_data" type="tcp_rec_command.py" output="screen">
+    <param name="in_simu" value="$(arg in_simu)" />
+    <param name="host" value="$(arg host)" />
+    <param name="port" value="$(arg port_rec_command_uav)" />
+    <param name="object" value="$(arg object_uav)" />
+  </node>
+
+  <!-- Noeud reception command UAV pour enregistrement -->
+  <node name="tcp_rec_command_ugv" pkg="save_data" type="tcp_rec_command.py" output="screen">
+    <param name="in_simu" value="$(arg in_simu)" />
+    <param name="host" value="$(arg host)" />
+    <param name="port" value="$(arg port_rec_command_ugv)" />
+    <param name="object" value="$(arg object_ugv)" />
+  </node>
+
+
+  <rosparam command="load" file="$(find pd_controller)/config/parameters.yaml"/>
+
+  <!-- To retrieve OptiTrack data -->
+  <arg name="server" default="172.26.213.1"/>
+  <node pkg="vrpn_client_ros" type="vrpn_client_node" name="vrpn_client_node" output="screen">
+  <rosparam subst_value="true">
+      server: $(arg server)
+      port: 3883
+      frame_id: 1
+      broadcast_tf: true
+      # Must either specify refresh frequency > 0.0, or a list of trackers to create
+      refresh_tracker_frequency: 1.0
+      #trackers:
+      #- FirstTracker
+      #- SecondTracker
+  </rosparam>
+  </node>
+  
+  <node name="main_node" pkg="steering_car_pd" type="steering_car_main_node.py" output="screen">
+  </node>
+
+  <node name="trajectory_node" pkg="trajectory" type="trajectory_node.py" output="screen">
   </node>
 
 </launch>

@@ -16,7 +16,7 @@ class SimuSendUGVCommand(object):
     def __init__(self):
         rospy.init_node("Simu_Send_UGV_Command")
         self.in_simu = rospy.get_param('~in_simu', False)
-        self.host = '127.0.0.1' if self.in_simu else rospy.get_param('~host', '172.26.209.13')
+        self.host = '127.0.0.1' if self.in_simu else rospy.get_param('~host', '172.26.209.28')
         self.port = rospy.get_param('~port', 62733)
         
         self._steering_cmd_sub = rospy.Subscriber("steering", Float32, self.steering_cmd_callback, queue_size=1)

@@ -30,6 +30,8 @@ class SteeringCarMainNode:
         self.L = rospy.get_param('L')
         
         self.current_vrpn_msg = PoseStamped()
+        self.uav_vrpn_msg = PoseStamped()
+        self.rec_destination = PoseStamped()
         self.current_orientation = 0
         
         # Initialize the controller
@@ -47,7 +49,7 @@ class SteeringCarMainNode:
         
         # Store reference read from Excel
         path_excel_file = rospy.get_param('path_excel_file')
-        self.reference = ExcelReader.extract_data_excel_to_array(path_excel_file).T
+        # self.reference = ExcelReader.extract_data_excel_to_array(path_excel_file).T
         
         # Initial control
         steering_0 = rospy.get_param('u_vector_0/steering')
@@ -64,8 +66,11 @@ class SteeringCarMainNode:
         self.stop_emergency = False
         
         # Initialize the subscriber to the Optitrack
-        rospy.Subscriber("/vrpn_client_node/target/pose", PoseStamped, self.__callback_vrpn)
+        rospy.Subscriber("/vrpn_client_node/ugv/pose", PoseStamped, self.__callback_vrpn)
+        rospy.Subscriber("/vrpn_client_node/uav/pose", PoseStamped, self.__callback_uav_vrpn)
         rospy.Subscriber("/orientation/euler",Vector3, self.__callback_orientation)
+
+        self.publish_rec = rospy.Publisher("/rec_command/ugv/command", PoseStamped, queue_size=10)
 
         # Initialize the listener to the STOP message
         rospy.Subscriber("/steering_car/STOP",String,self.__callback_stop_emergency)
@@ -83,7 +88,7 @@ class SteeringCarMainNode:
         rate_Hz = int(1/self.Ts) # 10 Hz
         rate = rospy.Rate(rate_Hz)
         
-        while (not self.stop_time_reached) and (not rospy.is_shutdown()):
+        while (not rospy.is_shutdown()): #(not self.stop_time_reached) and
             
             u_k = np.zeros((2,1))          
             
@@ -98,21 +103,33 @@ class SteeringCarMainNode:
                 
                 # (for debugging estimated state)
                 current_state = Vector3()
-                current_state.x = x_k[0,0]
-                current_state.y = x_k[1,0]
-                current_state.z = x_k[2,0]
+                current_state.x = x_k[0]
+                current_state.y = x_k[1]
+                current_state.z = x_k[2]
                 self.debug_state_pub.publish(current_state)
                 
                 # The reference is a trajectory
-                ref_k = np.array([[self.reference[0,self._k]], 
-                                  [self.reference[1,self._k]], 
-                                  [self.reference[2,self._k]]])
+                # ref_k = np.array([[self.reference[0,self._k]], 
+                #                   [self.reference[1,self._k]], 
+                #                   [self.reference[2,self._k]]])
+
+                ref_k = np.array([[self.uav_vrpn_msg.pose.position.x],
+                                  [-self.uav_vrpn_msg.pose.position.z],
+                                  [0.0]])
+
+                self.rec_destination.pose.position.x = ref_k[0]
+                self.rec_destination.pose.position.y = ref_k[1]
+                self.rec_destination.pose.position.z = 0.0
+                self.rec_destination.header.stamp = rospy.Time.now()
+                rospy.loginfo(f"x= {self.rec_destination.pose.position.x}, y={self.rec_destination.pose.position.y}, z={self.rec_destination.pose.position.z}")
+
+                self.publish_rec.publish(self.rec_destination)
                                   
                 # (for debugging reference)
                 reference = Vector3()
-                reference.x = ref_k[0,0]
-                reference.y = ref_k[1,0]
-                reference.z = ref_k[2,0]
+                reference.x = ref_k[0]
+                reference.y = ref_k[1]
+                reference.z = ref_k[2]
                 self.debug_ref_pub.publish(reference)
                 
                 u_k = self.my_steering_car_pd.compute_control_action(x_k, ref_k)
@@ -139,6 +156,9 @@ class SteeringCarMainNode:
         
     def __callback_vrpn(self, msg):
         self.current_vrpn_msg = msg
+    
+    def __callback_uav_vrpn(self, msg):
+        self.uav_vrpn_msg = msg
         
     def __callback_orientation(self, msg):
         self.current_orientation = msg.y

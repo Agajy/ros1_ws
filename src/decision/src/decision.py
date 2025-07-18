@@ -21,13 +21,15 @@ class Decision(object):
         self._sub_vrpn_ugv = rospy.Subscriber("/vrpn_client_node/ugv/pose", PoseStamped, self.vrpn_client_ugv_callback, queue_size=1)
 
         self._sub_state_uav = rospy.Subscriber(f"/state/uav", Bool, self.state_uav_callback, queue_size=1)
-        self._sub_state_ugv = rospy.Subscriber(f"/state/uav", Bool, self.state_uav_callback, queue_size=1)
+        self._sub_state_ugv = rospy.Subscriber(f"/state/ugv", Bool, self.state_ugv_callback, queue_size=1)
 
         self._pub_error_uav = rospy.Publisher("/error_pose/uav/pose", PoseStamped, queue_size=1)
         self._pub_error_ugv = rospy.Publisher("/error_pose/ugv/pose", PoseStamped, queue_size=1)
 
         self.aruco_pose_sub = rospy.Subscriber('/target_pose', PoseStamped, self.aruco_pose_callback, queue_size=1)
         self.aruco_detected_sub = rospy.Subscriber('/aruco_detected', Bool, self.aruco_detected_callback, queue_size=1)
+        self.line_detected_sub = rospy.Subscriber('/line_detected', Float32, self.line_detected_callback)
+
 
         
 
@@ -44,12 +46,15 @@ class Decision(object):
 
         rospy.Timer(rospy.Duration(1.0/40), self.logic)
         self.detection_aruco = False
+        self.line_state = False
         self.way_init_uav = False
 
         self._k = 0
         
         rospy.loginfo("decision initialized")
 
+    def line_detected_callback(self, data):
+        self.line_state = True if data.data > 0 else False
 
     def euler_from_quaternion(self,x, y, z, w):
         """
@@ -129,7 +134,7 @@ class Decision(object):
                 self.way_init_uav = True
             else:
                 if self._k < len(self.reference[0,:]):
-                    if not self.detection_aruco :
+                    if not self.detection_aruco and not self.line_state :
                         pose = Pose()
                         next_k = (self._k + 1) % len(self.reference[0, :])
                         pose.position.x = self.reference[0, self._k]
@@ -179,19 +184,19 @@ class Decision(object):
                         error_pose.pose.position.z = self._pose_aruco.position.z
 
 
-                        roll,pitch,yaw = self.euler_from_quaternion(self._pose_aruco.orientation.x,
-                                                        self._pose_aruco.orientation.y,
-                                                        self._pose_aruco.orientation.z,
-                                                        self._pose_aruco.orientation.w)
+                        # roll,pitch,yaw = self.euler_from_quaternion(self._pose_aruco.orientation.x,
+                        #                                 self._pose_aruco.orientation.y,
+                        #                                 self._pose_aruco.orientation.z,
+                        #                                 self._pose_aruco.orientation.w)
 
 
-                        error_pose.pose.orientation.x = 0.0
-                        error_pose.pose.orientation.y = 0.0
-                        error_pose.pose.orientation.z = yaw
-                        error_pose.pose.orientation.w = 0.0
+                        error_pose.pose.orientation.x = self._pose_aruco.orientation.x
+                        error_pose.pose.orientation.y = self._pose_aruco.orientation.y
+                        error_pose.pose.orientation.z = self._pose_aruco.orientation.z
+                        error_pose.pose.orientation.w = self._pose_aruco.orientation.w
                        
 
-                        rospy.loginfo(f"stoooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooop")
+                        rospy.loginfo(f"IBVS en fonctionnement")
 
 
                     self._pub_error_uav.publish(error_pose)

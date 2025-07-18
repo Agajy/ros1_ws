@@ -16,18 +16,19 @@ class SendTCPCommand(object):
     def __init__(self):
         rospy.init_node("Send_by TCP_Command")
         self.in_simu = rospy.get_param('~in_simu', False)
-        self.host = '127.0.0.1' if self.in_simu else rospy.get_param('~host', '172.26.209.13')
+        self.host = '127.0.0.1' if self.in_simu else rospy.get_param('~host', '172.26.209.28')
         self.port = rospy.get_param('~port', 62732)
         
         self.object_to_command = rospy.get_param('~object_to_command')
         self.command_topic = f"/error_pose/{self.object_to_command}/pose"
         self._error_pose_sub = rospy.Subscriber(self.command_topic, PoseStamped, self.error_pose_callback, queue_size=1)
-
+        self.line_detected_sub = rospy.Subscriber('/line_detected', Float32, self.n_lines_detected_callback)
         self._publisher_state = rospy.Publisher(f"/state/{self.object_to_command}", Bool, queue_size=1)
         
         self._ex = 0.0
         self._ey = 0.0
         self._eyaw = 0.0
+        self._n_lines_detected = 0.0
         self._connected = False
         self.sock = None
         
@@ -40,36 +41,25 @@ class SendTCPCommand(object):
         self.connection_thread.start()
         
         rospy.loginfo("Send TCP Command initialized")
-    
-    def euler_from_quaternion(self,x, y, z, w):
-        """
-        Convert a quaternion into euler angles (roll, pitch, yaw)
-        roll is rotation around x in radians (counterclockwise)
-        pitch is rotation around y in radians (counterclockwise)
-        yaw is rotation around z in radians (counterclockwise)
-        """
-        t0 = +2.0 * (w * x + y * z)
-        t1 = +1.0 - 2.0 * (x * x + y * y)
-        roll_x = math.atan2(t0, t1)
-     
-        t2 = +2.0 * (w * y - z * x)
-        t2 = +1.0 if t2 > +1.0 else t2
-        t2 = -1.0 if t2 < -1.0 else t2
-        pitch_y = math.asin(t2)
-     
-        t3 = +2.0 * (w * z + x * y)
-        t4 = +1.0 - 2.0 * (y * y + z * z)
-        yaw_z = math.atan2(t3, t4)
-
-        return roll_x, pitch_y, yaw_z # in radians
-          
+              
     def error_pose_callback(self, msg):
         self._ex = msg.pose.position.x
         self._ey = msg.pose.position.y
-        # roll_x, pitch_y, self._eyaw = self.euler_from_quaternion(
-        #     msg.pose.orientation.x,msg.pose.orientation.y,msg.pose.orientation.z,msg.pose.orientation.w
-        #     )
-        self._eyaw = msg.pose.orientation.z
+
+        # roll_x, pitch_y, yaw_z = tf.transformations.euler_from_quaternion([
+        #             msg.pose.orientation.x,
+        #             msg.pose.orientation.y, 
+        #             msg.pose.orientation.z,
+        #             msg.pose.orientation.w
+        #         ])
+        self._eyaw = msg.pose.orientation.z  #degrees(yaw_z)
+        # self._eyaw = msg.pose.orientation.z
+
+
+    def n_lines_detected_callback(self, msg):
+        """Callback pour le nombre de lignes détectées"""
+        self._n_lines_detected = msg.data
+
     def connection_manager(self):
         """Thread qui gère la connexion et la reconnexion TCP"""
         while not rospy.is_shutdown():
@@ -103,7 +93,7 @@ class SendTCPCommand(object):
             self.sock.settimeout(1.0)
             
             while self._connected and not rospy.is_shutdown():
-                message = f'{self._ex};{self._ey};{self._eyaw};'
+                message = f'{self._ex};{self._ey};{self._eyaw};{self._n_lines_detected};'
                 try:
                     self.sock.sendall(message.encode())
                     rospy.logdebug(f"Sent: {message}")
