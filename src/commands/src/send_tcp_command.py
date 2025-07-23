@@ -23,12 +23,14 @@ class SendTCPCommand(object):
         self.command_topic = f"/error_pose/{self.object_to_command}/pose"
         self._error_pose_sub = rospy.Subscriber(self.command_topic, PoseStamped, self.error_pose_callback, queue_size=1)
         self.line_detected_sub = rospy.Subscriber('/line_detected', Float32, self.n_lines_detected_callback)
+        self.no_optitrack_sub = rospy.Subscriber('/no_optitrack', Bool, self.no_optitrack_callback)
         self._publisher_state = rospy.Publisher(f"/state/{self.object_to_command}", Bool, queue_size=1)
         
         self._ex = 0.0
         self._ey = 0.0
         self._eyaw = 0.0
         self._n_lines_detected = 0.0
+        self._no_optitrack = 0.0
         self._connected = False
         self.sock = None
         
@@ -40,7 +42,7 @@ class SendTCPCommand(object):
         self.connection_thread.daemon = True
         self.connection_thread.start()
         
-        rospy.loginfo("Send TCP Command initialized")
+        rospy.loginfo("send_tcp_command.py : Send TCP Command initialized")
               
     def error_pose_callback(self, msg):
         self._ex = msg.pose.position.x
@@ -52,13 +54,22 @@ class SendTCPCommand(object):
         #             msg.pose.orientation.z,
         #             msg.pose.orientation.w
         #         ])
+        if self.object_to_command == "ugv":
+            return
         self._eyaw = msg.pose.orientation.z  #degrees(yaw_z)
         # self._eyaw = msg.pose.orientation.z
 
+    def no_optitrack_callback(self, msg):
+        """Callback pour le nombre de lignes détectées"""
+        if msg.data:
+            self._no_optitrack = 1.0
+        else:
+            self._no_optitrack = 0.0
+
 
     def n_lines_detected_callback(self, msg):
-        """Callback pour le nombre de lignes détectées"""
-        self._n_lines_detected = msg.data
+        self._n_lines_detected =  msg.data
+
 
     def connection_manager(self):
         """Thread qui gère la connexion et la reconnexion TCP"""
@@ -81,7 +92,7 @@ class SendTCPCommand(object):
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.connect((self.host, self.port))
             self._connected = True
-            rospy.loginfo(f"Connected to {self.host}:{self.port}")
+            rospy.loginfo(f"send_tcp_command.py : Connected to {self.host}:{self.port}")
         except Exception as e:
             self._connected = False
             rospy.logerr(f"Connection failed: {e}")
@@ -93,7 +104,11 @@ class SendTCPCommand(object):
             self.sock.settimeout(1.0)
             
             while self._connected and not rospy.is_shutdown():
-                message = f'{self._ex};{self._ey};{self._eyaw};{self._n_lines_detected};'
+                if self.object_to_command == "ugv":
+                    message = f'{self._ex};{self._ey};'
+                elif self.object_to_command == "Drone_0":
+                    message = f'{self._ex};{self._ey};{self._eyaw};{self._n_lines_detected};{self._no_optitrack};'
+
                 try:
                     self.sock.sendall(message.encode())
                     rospy.logdebug(f"Sent: {message}")
@@ -104,7 +119,7 @@ class SendTCPCommand(object):
                         if data:
                             response = data.decode()
                             if response == "True":
-                                rospy.loginfo("Command accepted and will be executed")
+                                rospy.loginfo("send_tcp_command.py : Command accepted and will be executed")
                                 self._publisher_state.publish(True)
                             elif response == "False":
                                 rospy.logwarn("Command rejected")
@@ -136,7 +151,7 @@ class SendTCPCommand(object):
                     self.sock.close()
                 except:
                     pass
-            rospy.loginfo("Connection closed")
+            rospy.loginfo("send_tcp_command.py : Connection closed")
     
     def spin(self):
         rospy.spin()

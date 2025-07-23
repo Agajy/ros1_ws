@@ -15,7 +15,7 @@ class SteeringCarMainNode:
     def __init__(self):
         # Initialize the ROS node
         rospy.init_node('steering_car_main_node')
-        rospy.loginfo('steering_car_main_node successfully initialized!')
+        rospy.loginfo('steering_car_main_node.py : successfully initialized!')
         
         # Initialize time of the simulation
         self.t = 0.0
@@ -67,7 +67,7 @@ class SteeringCarMainNode:
         
         # Initialize the subscriber to the Optitrack
         rospy.Subscriber("/vrpn_client_node/ugv/pose", PoseStamped, self.__callback_vrpn)
-        rospy.Subscriber("/vrpn_client_node/uav/pose", PoseStamped, self.__callback_uav_vrpn)
+        rospy.Subscriber("/vrpn_client_node/Drone_0/pose", PoseStamped, self.__callback_uav_vrpn)
         rospy.Subscriber("/orientation/euler",Vector3, self.__callback_orientation)
 
         self.publish_rec = rospy.Publisher("/rec_command/ugv/command", PoseStamped, queue_size=10)
@@ -93,9 +93,9 @@ class SteeringCarMainNode:
             u_k = np.zeros((2,1))          
             
             # If the simulation is not finished ...
-            if (not self.stop_emergency) and (self.t <= self.stop_time):  
+            if (not self.stop_emergency) :#and (self.t <= self.stop_time):  
                 
-                rospy.loginfo("[%s] k = %d, t = %.1f", rospy.get_name(), self._k, self.t)
+                rospy.loginfo("steering_car_main_node.py : [%s] k = %d, t = %.1f", rospy.get_name(), self._k, self.t)
                 
                 msg = self.current_vrpn_msg
                 
@@ -121,7 +121,7 @@ class SteeringCarMainNode:
                 self.rec_destination.pose.position.y = ref_k[1]
                 self.rec_destination.pose.position.z = 0.0
                 self.rec_destination.header.stamp = rospy.Time.now()
-                rospy.loginfo(f"x= {self.rec_destination.pose.position.x}, y={self.rec_destination.pose.position.y}, z={self.rec_destination.pose.position.z}")
+                rospy.loginfo(f"steering_car_main_node.py : x= {self.rec_destination.pose.position.x}, y={self.rec_destination.pose.position.y}, z={self.rec_destination.pose.position.z}")
 
                 self.publish_rec.publish(self.rec_destination)
                                   

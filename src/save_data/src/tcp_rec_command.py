@@ -76,37 +76,46 @@ class RecPosition:
 
     def tcp_client(self):
         while not rospy.is_shutdown() and self.running:
+            sock = None
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2.0)  # Timeout pour éviter blocage infini
                 sock.connect((self.TCP_IP, self.TCP_PORT))
-                
+                sock.settimeout(None)  # Après connexion, on peut enlever le timeout
+
+                buffer = ""
                 while not rospy.is_shutdown() and self.running:
-                    # First line contains number of objects
                     data = sock.recv(4096).decode('utf-8')
                     if not data:
                         break
-                    
-                    lines = data.strip().split('\n')
-                    num_objects = int(lines[0])
-                    
-                    # Process each object's position
-                    for i in range(num_objects):
-                        if i + 1 >= len(lines):
+                    buffer += data
+                    while '\n' in buffer:
+                        lines = buffer.split('\n')
+                        # On traite la première ligne (nombre d'objets)
+                        if len(lines) < 2:
                             break
-                            
-                        parts = lines[i + 1].strip().split(';')
-                        if len(parts) == 8:
-                            obj_name = parts[0]
-                            x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
-                            qx, qy, qz, qw = float(parts[4]), float(parts[5]), float(parts[6]), float(parts[7])
-                            
-                            self.publish_pose_rec_by_tcp(obj_name, x, y, z, qx, qy, qz, qw)
-                
+                        num_objects = int(lines[0])
+                        # On vérifie qu'on a assez de lignes pour tous les objets
+                        if len(lines) < num_objects + 1:
+                            break
+                        for i in range(num_objects):
+                            parts = lines[i + 1].strip().split(';')
+                            if len(parts) == 8 or len(parts) == 9:  # 1 nom + 7 ou 8 valeurs
+                                obj_name = parts[0]
+                                try:
+                                    x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
+                                    qx, qy, qz, qw = float(parts[4]), float(parts[5]), float(parts[6]), float(parts[7])
+                                    self.publish_pose_rec_by_tcp(obj_name, x, y, z, qx, qy, qz, qw)
+                                except Exception as e:
+                                    rospy.logwarn(f"Error parsing object data: {e}")
+                        # On retire les lignes traitées du buffer
+                        buffer = '\n'.join(lines[num_objects + 1:])
             except socket.error as e:
                 rospy.logwarn(f"Socket error: {e}. Retrying in 5 seconds...")
                 rospy.sleep(5.0)
             finally:
-                sock.close()
+                if sock:
+                    sock.close()
 
     def shutdown(self):
         self.running = False

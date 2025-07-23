@@ -35,7 +35,7 @@ class SimuSendUGVCommand(object):
         self.connection_thread.daemon = True
         self.connection_thread.start()
         
-        rospy.loginfo("SimuSendUGVCommand initialized")
+        rospy.loginfo("simu_control_steering_car.py : SimuSendUGVCommand initialized")
     
     def throttle_cmd_callback(self, msg):
         self._speed = -msg.data
@@ -64,7 +64,7 @@ class SimuSendUGVCommand(object):
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.connect((self.host, self.port))
             self._connected = True
-            rospy.loginfo(f"Connected to {self.host}:{self.port}")
+            rospy.loginfo(f"simu_control_steering_car.py : Connected to {self.host}:{self.port}")
         except Exception as e:
             self._connected = False
             rospy.logerr(f"Connection failed: {e}")
@@ -110,7 +110,7 @@ class SimuSendUGVCommand(object):
                     self.sock.close()
                 except:
                     pass
-            rospy.loginfo("Connection closed")
+            rospy.loginfo("simu_control_steering_car.py : Connection closed")
     
     def spin(self):
         rospy.spin()

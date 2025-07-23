@@ -18,7 +18,7 @@ class IBVS:
         self.line_sub = rospy.Subscriber('/line_path', PoseArray, self.line_path_callback)
         
         # Publishers
-        self.error_tag = rospy.Publisher('/target_pose', PoseStamped, queue_size=10)
+        self.error_tag = rospy.Publisher('/target_pose_lines', PoseStamped, queue_size=10)
 
         # État du système
         self.pose_tag_camera = Pose()
@@ -139,9 +139,9 @@ class IBVS:
                 command_msg.pose.position.y = control_command.position.y
                 command_msg.pose.orientation.z = self.gain_z  * control_command.orientation.z
 
-                np.clip(command_msg.pose.position.x, -0.1, 0.1, out=command_msg.pose.position.x)
-                np.clip(command_msg.pose.position.y, -0.1, 0.1, out=command_msg.pose.position.y)
-                np.clip(command_msg.pose.orientation.z, -pi/60, pi/60, out=command_msg.pose.orientation.z)
+                command_msg.pose.position.x = np.clip(command_msg.pose.position.x, -0.1, 0.1)
+                command_msg.pose.position.y = np.clip(command_msg.pose.position.y, -0.1, 0.1)
+                command_msg.pose.orientation.z = np.clip(command_msg.pose.orientation.z, -pi/60, pi/60)
                 
                 self.error_tag.publish(command_msg)
                 

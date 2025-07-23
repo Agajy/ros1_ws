@@ -36,7 +36,7 @@ class TrajectoryErrorNode:
         self.image_sub = rospy.Subscriber('/image_tcp_client/image_gray', Image, self.image_callback)
         
         # Publishers
-        self.error_pub = rospy.Publisher('/target_pose', PoseStamped, queue_size=10)
+        self.error_pub = rospy.Publisher('/target_pose_ugv', PoseStamped, queue_size=10)
         
         # Timer pour le calcul périodique des erreurs
         self.timer = rospy.Timer(rospy.Duration(0.1), self.compute_error_callback)

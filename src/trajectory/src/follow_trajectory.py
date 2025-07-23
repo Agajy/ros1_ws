@@ -20,7 +20,7 @@ class TrajectoryNode:
         self.velocity_service = rospy.Service('u_vel_d', GetTwist, self.handle_velocity)
         self.acceleration_service = rospy.Service('u_acc_d', GetTwist, self.handle_acceleration)
         
-        rospy.loginfo("Service node is ready.")
+        rospy.loginfo("follow_trajectory.py : Service node is ready.")
         self._k = 0
     
     def handle_position(self, req):
@@ -35,7 +35,7 @@ class TrajectoryNode:
             pose.position.y = self.reference[1, -1]
             pose.position.z = self.reference[2, -1]
 
-        rospy.loginfo(f"Position sent: x={pose.position.x}, y={pose.position.y}, z={pose.position.z}")
+        rospy.loginfo(f"follow_trajectory.py : Position sent: x={pose.position.x}, y={pose.position.y}, z={pose.position.z}")
         return GetPoseResponse(pose=pose)
     
     def handle_velocity(self, req):
@@ -47,7 +47,7 @@ class TrajectoryNode:
         velocity.angular.y = 0.0
         velocity.angular.z = 0.0
 
-        rospy.loginfo(f"Velocity sent: {velocity}")
+        rospy.loginfo(f"follow_trajectory.py : Velocity sent: {velocity}")
         return GetTwistResponse(twist=velocity)
 
     def handle_acceleration(self, req):
@@ -59,7 +59,7 @@ class TrajectoryNode:
         acceleration.angular.y = 0.0
         acceleration.angular.z = 0.0
 
-        rospy.loginfo(f"Acceleration sent: {acceleration}")
+        rospy.loginfo(f"follow_trajectory.py : Acceleration sent: {acceleration}")
         return GetTwistResponse(twist=acceleration)
     
     def run(self):

@@ -16,22 +16,32 @@ import threading
 class Decision(object):
     def __init__(self):
         rospy.init_node("decision")
+        self.object_uav= rospy.get_param('~uav')
+        self.object_ugv= rospy.get_param('~ugv')
+        self.in_simu= rospy.get_param('~in_simu')
 
-        self._sub_vrpn_uav = rospy.Subscriber("/vrpn_client_node/uav/pose", PoseStamped, self.vrpn_client_uav_callback, queue_size=1)
-        self._sub_vrpn_ugv = rospy.Subscriber("/vrpn_client_node/ugv/pose", PoseStamped, self.vrpn_client_ugv_callback, queue_size=1)
+        self._state_uav = False
+        self._state_ugv = False
 
-        self._sub_state_uav = rospy.Subscriber(f"/state/uav", Bool, self.state_uav_callback, queue_size=1)
-        self._sub_state_ugv = rospy.Subscriber(f"/state/ugv", Bool, self.state_ugv_callback, queue_size=1)
+        self._sub_vrpn_uav = rospy.Subscriber(f"/vrpn_client_node/{self.object_uav}/pose", PoseStamped, self.vrpn_client_uav_callback, queue_size=1)
+        self._sub_vrpn_ugv = rospy.Subscriber(f"/vrpn_client_node/{self.object_ugv}/pose", PoseStamped, self.vrpn_client_ugv_callback, queue_size=1)
 
-        self._pub_error_uav = rospy.Publisher("/error_pose/uav/pose", PoseStamped, queue_size=1)
-        self._pub_error_ugv = rospy.Publisher("/error_pose/ugv/pose", PoseStamped, queue_size=1)
+        self._sub_state_uav = rospy.Subscriber(f"/state/{self.object_uav}", Bool, self.state_uav_callback, queue_size=1)
 
-        self.aruco_pose_sub = rospy.Subscriber('/target_pose', PoseStamped, self.aruco_pose_callback, queue_size=1)
+        if self.in_simu:
+            self._sub_state_ugv = rospy.Subscriber(f"/state/{self.object_ugv}", Bool, self.state_ugv_callback, queue_size=1)
+        else:
+            self._state_ugv = True 
+
+        self._pub_error_uav = rospy.Publisher(f"/error_pose/{self.object_uav}/pose", PoseStamped, queue_size=1)
+        self._pub_error_ugv = rospy.Publisher(f"/error_pose/{self.object_ugv}/pose", PoseStamped, queue_size=1)
+
+        self.aruco_pose_sub = rospy.Subscriber('/target_pose_lines', PoseStamped, self.aruco_pose_callback, queue_size=1)
         self.aruco_detected_sub = rospy.Subscriber('/aruco_detected', Bool, self.aruco_detected_callback, queue_size=1)
-        self.line_detected_sub = rospy.Subscriber('/line_detected', Float32, self.line_detected_callback)
+        self.line_detected_sub = rospy.Subscriber('/line_detected', Float32, self.line_detected_callback)       
 
+        self.no_optitrack_pub = rospy.Publisher('/no_optitrack', Bool, queue_size=1)
 
-        
 
         path_excel_file = rospy.get_param('path_excel_file')
         self.reference = ExcelReader.extract_data_excel_to_array(path_excel_file).T
@@ -41,20 +51,21 @@ class Decision(object):
         self._pose_aruco = Pose()
 
 
-        self._state_uav = False
-        self._state_ugv = False
-
         rospy.Timer(rospy.Duration(1.0/40), self.logic)
         self.detection_aruco = False
         self.line_state = False
         self.way_init_uav = False
 
-        self._k = 0
+        self._k_uav = 0
+        self._k_ugv = 0
         
-        rospy.loginfo("decision initialized")
+        rospy.loginfo("decision.py : decision initialized")
 
     def line_detected_callback(self, data):
         self.line_state = True if data.data > 0 else False
+    
+    def aruco_detected_callback(self, msg):
+        self.detection_aruco = msg.data
 
     def euler_from_quaternion(self,x, y, z, w):
         """
@@ -79,21 +90,8 @@ class Decision(object):
         return roll_x, pitch_y, yaw_z # in radians
 
     def aruco_pose_callback(self, msg):
-        """
-        Callback function for the ArUco pose.
-        """
         self._pose_aruco = msg.pose
-        self._pose_aruco.position.x = msg.pose.position.x
-        self._pose_aruco.position.y = msg.pose.position.y
-        self._pose_aruco.position.z = msg.pose.position.z
-        self._pose_aruco.orientation.x = msg.pose.orientation.x
-        self._pose_aruco.orientation.y = msg.pose.orientation.y
-        self._pose_aruco.orientation.z = msg.pose.orientation.z
-        self._pose_aruco.orientation.w = msg.pose.orientation.w
-        
-
-    def aruco_detected_callback(self, msg):
-        self.detection_aruco = msg.data
+      
 
     def vrpn_client_uav_callback(self, msg):
         self._pose_uav = msg.pose
@@ -130,20 +128,20 @@ class Decision(object):
     def logic(self,event=None):
         if self._state_uav:
             if not self.way_init_uav:
-                self._k = self.nearest_point(self._pose_uav, self.reference)
+                self._k_uav = self.nearest_point(self._pose_uav, self.reference)
                 self.way_init_uav = True
             else:
-                if self._k < len(self.reference[0,:]):
+                if self._k_uav < len(self.reference[0,:]):
                     if not self.detection_aruco and not self.line_state :
                         pose = Pose()
-                        next_k = (self._k + 1) % len(self.reference[0, :])
-                        pose.position.x = self.reference[0, self._k]
-                        pose.position.y = self.reference[1, self._k]
-                        pose.position.z = self.reference[2, self._k]
+                        next_k = (self._k_uav + 1) % len(self.reference[0, :])
+                        pose.position.x = self.reference[0, self._k_uav]
+                        pose.position.y = self.reference[1, self._k_uav]
+                        pose.position.z = self.reference[2, self._k_uav]
 
                         # Calculate orientation based on the next point
-                        dx = self.reference[0, next_k] - self.reference[0, self._k]
-                        dy = self.reference[1, next_k] - self.reference[1, self._k]
+                        dx = self.reference[0, next_k] - self.reference[0, self._k_uav]
+                        dy = self.reference[1, next_k] - self.reference[1, self._k_uav]
                         yaw = math.atan2(dy, dx)
                         yaw_uav = self.euler_from_quaternion(self._pose_uav.orientation.x,
                                                         self._pose_uav.orientation.y,
@@ -173,7 +171,7 @@ class Decision(object):
                         error_pose.pose.orientation.y = 0.0
                         error_pose.pose.orientation.z = yaw
                         error_pose.pose.orientation.w = 0.0
-                        self._k += 1
+                        self._k_uav += 1
 
                     else :
                         error_pose = PoseStamped()
@@ -196,15 +194,15 @@ class Decision(object):
                         error_pose.pose.orientation.w = self._pose_aruco.orientation.w
                        
 
-                        rospy.loginfo(f"IBVS en fonctionnement")
+                        rospy.loginfo(f"decision.py : IBVS en fonctionnement")
 
-
+                    self.no_optitrack_pub.publish(Bool(data=True if self.line_state else False))
                     self._pub_error_uav.publish(error_pose)
-                    rospy.loginfo(f"error pose uav: {self._k}")
+                    rospy.loginfo(f"decision.py : error pose uav: {self._k_uav}")
                 
                 else:
-                    self._k =0
-                    rospy.loginfo("Reached end of trajectory, resetting...")
+                    self._k_uav =0
+                    rospy.loginfo("decision.py : Reached end of trajectory, resetting...")
         else:
             self.way_init_uav = False
 

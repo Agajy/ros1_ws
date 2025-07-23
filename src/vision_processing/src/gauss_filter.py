@@ -10,7 +10,7 @@ class GaussianFilterNode:
         rospy.init_node('gaussian_filter_node', anonymous=True)
         self.filtered_pub = rospy.Publisher('/filtered_curve', Marker, queue_size=10)
         self.original_sub = rospy.Subscriber('/original_curve', Marker, self.original_callback)
-        rospy.loginfo("Gaussian Filter Node Initialized")
+        rospy.loginfo("gauss_filter.py : Gaussian Filter Node Initialized")
     
     def gaussian_filter(self,x, P_gauss=3, epsilon=0.01):
         sigma = P_gauss / np.sqrt(-2.0 * np.log(epsilon))

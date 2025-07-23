@@ -18,7 +18,7 @@ class SteeringCarMainNode:
     def __init__(self):
         # Initialize the ROS node
         rospy.init_node('steering_car_main_node')
-        rospy.loginfo('steering_car_main_node successfully initialized!')
+        rospy.loginfo('steering_car_controller.py : steering_car_main_node successfully initialized!')
 
         # Initialize the subscriber to the Optitrack
         rospy.Subscriber("/vrpn_client_node/target/pose", PoseStamped, self.__callback_vrpn)
@@ -41,7 +41,7 @@ class SteeringCarMainNode:
         # self.pose_reference_init = False
         # while self.pose_reference_init==False:
         #     test+=1
-        #     rospy.loginfo(f"in the boucle: {test}")
+        #     rospy.loginfo(f"steering_car_controller.py : in the boucle: {test}")
         #     try :
         #         self.pose_reference = self.__state_vector(self.current_vrpn_msg)
         #         self.pose = self.__state_vector(self.current_vrpn_msg)
@@ -164,7 +164,7 @@ class SteeringCarMainNode:
         self.last_pose=self.pose
         self.last_pose_reference=self.pose_reference
         u_k=np.array([self.throttle_msg,self.steering_msg])
-        rospy.loginfo(f"receive :\n   position {self.pose},\n   position_desired {self.pose_reference},\n error:\n  {dx},{dy},{dpsi},\n   send:\n   {u_k}")
+        rospy.loginfo(f"steering_car_controller.py : receive :\n   position {self.pose},\n   position_desired {self.pose_reference},\n error:\n  {dx},{dy},{dpsi},\n   send:\n   {u_k}")
 
     def angle_between_vectors_xy(self,v1, v2):
         # Projection des vecteurs sur le plan XY
@@ -193,12 +193,12 @@ class SteeringCarMainNode:
     def reference_callback(self,event):
         service_name="u_position_d"
         rospy.wait_for_service(service_name)
-        rospy.loginfo("new_pose")
+        rospy.loginfo("steering_car_controller.py : new_pose")
         try:
             service_proxy = rospy.ServiceProxy(service_name, GetPose)
             reponse = service_proxy()
             pose_reference=reponse.pose
-            # rospy.loginfo(f"Response from {service_name}: {self.pose_reference}")
+            # rospy.loginfo(f"steering_car_controller.py : Response from {service_name}: {self.pose_reference}")
             self.pose_reference = np.array([pose_reference.position.x, pose_reference.position.y, pose_reference.position.z])
         except rospy.ServiceException as e:
             rospy.logerr(f"Service call failed: {e}")

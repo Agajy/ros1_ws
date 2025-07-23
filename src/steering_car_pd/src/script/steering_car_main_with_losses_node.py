@@ -15,7 +15,7 @@ class SteeringCarMainNode:
     def __init__(self):
         # Initialize the ROS node
         rospy.init_node('steering_car_main_node')
-        rospy.loginfo('steering_car_main_node successfully initialized!')
+        rospy.loginfo('steering_car_main_node_with_losses_node.py : successfully initialized!')
         
         # Initialize time of the simulation
         self.t = 0.0
@@ -99,7 +99,7 @@ class SteeringCarMainNode:
             # If the simulation is not finished ...
             if (not self.stop_emergency) and (self.t <= self.stop_time):  
                 
-                rospy.loginfo("[%s] k = %d, t = %.1f", rospy.get_name(), self._k, self.t)
+                rospy.loginfo("steering_car_main_node_with_losses_node.py : [%s] k = %d, t = %.1f", rospy.get_name(), self._k, self.t)
                 
                 # print(self.t)
                 

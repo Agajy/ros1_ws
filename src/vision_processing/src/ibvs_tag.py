@@ -19,7 +19,7 @@ class IBVS:
         self.aruco_corner_sub = rospy.Subscriber('/aruco_corners', PoseArray, self.aruco_corner_callback)
         
         # Publishers
-        self.error_tag = rospy.Publisher('/target_pose', PoseStamped, queue_size=10)
+        self.error_tag = rospy.Publisher('/target_pose_aruco', PoseStamped, queue_size=10)
 
         # État du système
         self.pose_tag_camera = Pose()

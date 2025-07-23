@@ -355,7 +355,7 @@ class _AckermannCtrlr(object):
             pose_stamped.pose.orientation.w = new_quaternion[3]
 
             self._target_pub.publish(pose_stamped)
-            rospy.loginfo(f"Position de {object_name}: {pose_stamped.pose.position}")
+            rospy.loginfo(f"ackermann_controller.py : Position de {object_name}: {pose_stamped.pose.position}")
 
 
     def ackermann_cmd_cb(self, ackermann_cmd):

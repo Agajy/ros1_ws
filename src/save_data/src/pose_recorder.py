@@ -54,10 +54,10 @@ class PoseRecorder:
             '/pose_recorder/status', String, queue_size=1
         )
         
-        rospy.loginfo(f"Nœud PoseRecorder initialisé")
-        rospy.loginfo(f"Topics surveillés: {self.topic_names}")
-        rospy.loginfo(f"Dossier de sortie: {self.output_dir}")
-        rospy.loginfo("Envoyez 'start' ou 'stop' sur /pose_recorder/command")
+        rospy.loginfo(f"pose_recorder.py : initialisé")
+        rospy.loginfo(f"pose_recorder.py : Topics surveillés: {self.topic_names}")
+        rospy.loginfo(f"pose_recorder.py : Dossier de sortie: {self.output_dir}")
+        rospy.loginfo("pose_recorder.py : Envoyez 'start' ou 'stop' sur /pose_recorder/command")
         
     def pose_callback(self, msg, topic_name):
         """Callback pour les messages PoseStamped"""
@@ -126,7 +126,7 @@ class PoseRecorder:
                 self.session_dir = os.path.join(self.output_dir, f"recording_{timestamp}")
                 if not os.path.exists(self.session_dir):
                     os.makedirs(self.session_dir)
-            rospy.loginfo(f"Enregistrement démarré dans {self.session_dir}")
+            rospy.loginfo(f"pose_recorder.py : Enregistrement démarré dans {self.session_dir}")
             self.status_pub.publish(String("recording"))
         else:
             rospy.logwarn("Enregistrement déjà en cours")
@@ -137,7 +137,7 @@ class PoseRecorder:
             with self.lock:
                 self.is_recording = False
             self.save_data()
-            rospy.loginfo("Enregistrement arrêté et données sauvegardées")
+            rospy.loginfo("pose_recorder.py : Enregistrement arrêté et données sauvegardées")
             self.status_pub.publish(String("stopped"))
         else:
             rospy.logwarn("Aucun enregistrement en cours")
@@ -151,7 +151,7 @@ class PoseRecorder:
         filepath = os.path.join(self.session_dir, "poses_sync.json")
         with open(filepath, 'w') as f:
             json.dump(rows, f, indent=2)
-        rospy.loginfo(f"Sauvegardé {len(rows)} lignes synchronisées dans {filepath}")
+        rospy.loginfo(f"pose_recorder.py : Sauvegardé {len(rows)} lignes synchronisées dans {filepath}")
 
         # Sauvegarder un fichier de métadonnées
         metadata = {
@@ -162,7 +162,7 @@ class PoseRecorder:
         metadata_file = os.path.join(self.session_dir, 'metadata.json')
         with open(metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
-        rospy.loginfo(f"Session sauvegardée dans: {self.session_dir}")
+        rospy.loginfo(f"pose_recorder.py : Session sauvegardée dans: {self.session_dir}")
 
     def run(self):
         """Boucle principale"""
@@ -184,7 +184,7 @@ def main():
         recorder = PoseRecorder()
         recorder.run()
     except rospy.ROSInterruptException:
-        rospy.loginfo("Nœud PoseRecorder arrêté")
+        rospy.loginfo("pose_recorder.py : Noeud PoseRecorder arrêté")
 
 if __name__ == '__main__':
     main()

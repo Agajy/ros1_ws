@@ -16,7 +16,7 @@ class SteeringCarMainNode:
     def __init__(self):
         # Initialize the ROS node
         rospy.init_node('steering_car_main_node')
-        rospy.loginfo('steering_car_main_node successfully initialized!')
+        rospy.loginfo('steering_car_controller.py successfully initialized!')
 
         # Initialize the subscriber to the Optitrack
         rospy.Subscriber("/vrpn_client_node/target/pose", PoseStamped, self.__callback_vrpn)
@@ -40,7 +40,7 @@ class SteeringCarMainNode:
         self.pose_reference_init = False
         while self.pose_reference_init==False:
             test+=1
-            rospy.loginfo(f"in the boucle: {test}")
+            rospy.loginfo(f"steering_car_controller.py : in the boucle: {test}")
             try :
                 self.pose_reference = self.__calculateRearPoint(self.current_vrpn_msg)
                 self.pose = self.__calculateRearPoint(self.current_vrpn_msg)
@@ -91,12 +91,12 @@ class SteeringCarMainNode:
         self.pose=self.__calculateRearPoint(self.current_vrpn_msg)
         u_k = self.my_steering_car_pd.compute_control_action(self.pose, self.pose_reference)
         self.my_controls_publisher.publish_control_inputs(u_k)
-        rospy.loginfo(f"receive :\n   position {self.pose},\n   position_desired {self.pose_reference},\n send:\n   {u_k}")
+        rospy.loginfo(f"steering_car_controller.py : receive :\n   position {self.pose},\n   position_desired {self.pose_reference},\n send:\n   {u_k}")
    
     def reference_callback(self,event):
         service_name="u_position_d"
         rospy.wait_for_service(service_name)
-        rospy.loginfo("new_pose")
+        rospy.loginfo("steering_car_controller.py : new_pose")
         try:
             service_proxy = rospy.ServiceProxy(service_name, GetPose)
             reponse = service_proxy()
