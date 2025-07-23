@@ -29,7 +29,7 @@ class Decision(object):
         # Modes de contrôle
         self.uav_mode = "stop"  # "follow_lines", "follow_aruco", "follow_path_optitrack", "stop"
         self.ugv_mode = "stop"  # "follow_path_optitrack", "controlled_by_image", "stop"
-        self.uav_ugv_mode = "stop"  # "follow_path_optitrack", "stop"
+        self.uav_ugv_mode = "stop"  # "follow_uav_current", "follow_uav_desired", "stop"
 
         # Subscribers existants
         self._sub_vrpn_uav = rospy.Subscriber(f"/vrpn_client_node/{self.object_uav}/pose", PoseStamped, self.vrpn_client_uav_callback, queue_size=1)
@@ -46,7 +46,6 @@ class Decision(object):
         self._pub_error_uav = rospy.Publisher(f"/error_pose/{self.object_uav}/pose", PoseStamped, queue_size=1)
         self._pub_error_ugv = rospy.Publisher(f"/error_pose/{self.object_ugv}/pose", PoseStamped, queue_size=1)
         self.no_optitrack_pub = rospy.Publisher('/no_optitrack', Bool, queue_size=1)
-
 
         # Sub pour les poses cibles
         self.target_pose_lines_sub = rospy.Subscriber('/target_pose_lines', PoseStamped, self.target_pose_lines_callback, queue_size=1)
@@ -88,7 +87,6 @@ class Decision(object):
         self.gui_thread.daemon = True
         self.gui_thread.start()
 
-        
         rospy.loginfo("decision.py : decision initialized with GUI")
 
     def create_gui(self):
@@ -158,8 +156,7 @@ class Decision(object):
     
     def create_and_run_gui(self):
         self.create_gui()
-        self.root.mainloop()  # boucle d’événements dédiée
-
+        self.root.mainloop()
 
     def update_status(self, message):
         """Mettre à jour le status dans l'interface"""
@@ -172,6 +169,12 @@ class Decision(object):
         self.way_init_uav = False
         self._k_uav = 0
         self.update_status(f"UAV mode changed to: {self.uav_mode}")
+        
+        # Réinitialiser le mode combiné si l'UAV passe en mode stop
+        if self.uav_mode == "stop" and self.uav_ugv_mode != "stop":
+            self.uav_ugv_mode = "stop"
+            self.combined_mode_var.set("stop")
+            self.update_status("Combined mode reset to stop (UAV stopped)")
 
     def update_ugv_mode(self):
         """Mettre à jour le mode UGV"""
@@ -179,11 +182,25 @@ class Decision(object):
         self.way_init_ugv = False
         self._k_ugv = 0
         self.update_status(f"UGV mode changed to: {self.ugv_mode}")
+        
+        # Si on active un mode UGV individuel, désactiver le mode combiné
+        if self.ugv_mode != "stop" and self.uav_ugv_mode != "stop":
+            self.uav_ugv_mode = "stop"
+            self.combined_mode_var.set("stop")
+            self.update_status("Combined mode reset to stop (UGV individual mode activated)")
 
     def update_combined_mode(self):
         """Mettre à jour le mode combiné"""
         self.uav_ugv_mode = self.combined_mode_var.get()
         self.update_status(f"Combined mode changed to: {self.uav_ugv_mode}")
+        
+        # Si on active le mode combiné, désactiver le mode UGV individuel
+        if self.uav_ugv_mode != "stop":
+            self.ugv_mode = "stop"
+            self.ugv_mode_var.set("stop")
+            self.way_init_ugv = False
+            self._k_ugv = 0
+            self.update_status("UGV individual mode reset to stop (Combined mode activated)")
 
     def emergency_stop(self):
         """Arrêt d'urgence"""
@@ -202,7 +219,6 @@ class Decision(object):
 
     def state_ugv_callback(self, msg):
         self._state_ugv = msg.data
-
 
     def euler_from_quaternion(self, x, y, z, w):
         """Convert a quaternion into euler angles (roll, pitch, yaw)"""
@@ -232,19 +248,11 @@ class Decision(object):
                 nearest_index = i
         return nearest_index
 
-
-
-
-
     def target_pose_lines_callback(self, msg):
         self._target_pose_lines = msg.pose
 
-
-
     def target_pose_aruco_callback(self, msg):
         self._target_pose_aruco = msg.pose
-
-
 
     def target_pose_ugv_callback(self, msg):
         self._target_pose_ugv = msg.pose
@@ -256,24 +264,17 @@ class Decision(object):
         self._target_pose_ugv.orientation.z = -msg.pose.orientation.y
         self._target_pose_ugv.orientation.w = msg.pose.orientation.w
 
-
-
     def line_detected_callback(self, data):
         self.line_state = True if data.data > 0 else False
 
-
-
     def aruco_detected_callback(self, msg):
         self.detection_aruco = msg.data
-
-
 
     def vrpn_client_uav_callback(self, msg):
         self._pose_uav = msg.pose
 
     def vrpn_client_ugv_callback(self, msg):
         self._pose_ugv = msg.pose
-
 
     def create_pose_from_reference(self, k, vehicle_pose):
         """Créer une pose à partir de la référence"""
@@ -302,7 +303,6 @@ class Decision(object):
 
         return pose
     
-
     def create_error_pose(self, current_pose, target_pose, target_yaw=None):
         """Créer un message d'erreur de pose"""
         error_pose = PoseStamped()
@@ -322,21 +322,20 @@ class Decision(object):
             error_pose.pose.orientation.w = 0.0
         else:
             yaw_vehicle = self.euler_from_quaternion(current_pose.orientation.x,
-                                        -current_pose.orientation.y,
+                                        current_pose.orientation.y,
                                         current_pose.orientation.z,
                                         current_pose.orientation.w)[2]
         
-
             error_pose.pose.orientation.x = 0.0
             error_pose.pose.orientation.y = 0.0
-            error_pose.pose.orientation.z = 0.0 #-(yaw_vehicle -target_pose.orientation.z)
+            error_pose.pose.orientation.z = (yaw_vehicle -target_pose.orientation.z)
             error_pose.pose.orientation.w = 0.0
 
         return error_pose
 
     def logic(self, event=None):
         """Logique principale de contrôle"""
-        # Contrôle UAV
+        # Contrôle UAV - toujours prioritaire et indépendant
         if self._state_uav and self.uav_mode != "stop":
             if self.uav_mode == "follow_lines":
                 rospy.loginfo("decision.py : UAV follow lines mode")
@@ -348,20 +347,23 @@ class Decision(object):
         else:
             self.way_init_uav = False
 
-        # Contrôle UGV
-        if self._state_ugv and self.ugv_mode != "stop":
-            if self.ugv_mode == "follow_path_optitrack":
-                self.handle_ugv_follow_path_optitrack()
-            elif self.ugv_mode == "controlled_by_image":
-                self.handle_ugv_controlled_by_image()
-        else:
-            self.way_init_ugv = False
-
-        # Contrôle combiné UAV-UGV
-        if self.uav_ugv_mode == "follow_uav_current":
-            self.handle_combined_follow_uav_current()
-        elif self.uav_ugv_mode == "follow_uav_desired":
-            self.handle_combined_follow_uav_desired()
+        # Contrôle UGV - vérifier si mode combiné ou individuel
+        if self._state_ugv:
+            if self.uav_ugv_mode != "stop":
+                # Mode combiné actif - priorité sur le mode UGV individuel
+                if self.uav_ugv_mode == "follow_uav_current":
+                    self.handle_combined_follow_uav_current()
+                elif self.uav_ugv_mode == "follow_uav_desired":
+                    self.handle_combined_follow_uav_desired()
+            elif self.ugv_mode != "stop":
+                # Mode UGV individuel uniquement si pas de mode combiné
+                if self.ugv_mode == "follow_path_optitrack":
+                    self.handle_ugv_follow_path_optitrack()
+                elif self.ugv_mode == "controlled_by_image":
+                    self.handle_ugv_controlled_by_image()
+            else:
+                # Aucun mode actif pour l'UGV
+                self.way_init_ugv = False
 
     def handle_uav_follow_lines(self):
         """Gérer le mode suivi de lignes pour l'UAV"""
@@ -381,7 +383,6 @@ class Decision(object):
         pose_stamped.pose = self._target_pose_aruco
         self._pub_error_uav.publish(pose_stamped)
  
-
     def handle_uav_follow_path_optitrack(self):
         """Gérer le mode suivi de trajectoire OptiTrack pour l'UAV"""
         self.no_optitrack_pub.publish(Bool(data=False))
@@ -392,7 +393,7 @@ class Decision(object):
             if self._k_uav < len(self.reference[0, :]):
                 target_pose = self.create_pose_from_reference(self._k_uav, self._pose_uav)
                 
-                # Stocker le point désiré pour l'UGV
+                # Stocker le point désiré pour l'UGV (pour les modes combinés)
                 self._uav_desired_pose = target_pose
                 
                 error_pose = self.create_error_pose(self._pose_uav, target_pose, target_pose.orientation.z)
@@ -409,7 +410,6 @@ class Decision(object):
         else:
             if self._k_ugv < len(self.reference[0, :]):
                 target_pose = self.create_pose_from_reference(self._k_ugv, self._pose_ugv)
-
                 error_pose = self.create_error_pose(self._pose_ugv, target_pose)
                 self._pub_error_ugv.publish(error_pose)
                 self._k_ugv += 1
@@ -418,8 +418,12 @@ class Decision(object):
 
     def handle_ugv_controlled_by_image(self):
         """Gérer le mode contrôle par image pour l'UGV"""
-        error_pose = self._target_pose_ugv
-        self._pub_error_ugv.publish(error_pose)
+        error_pose = self.create_error_pose(self._pose_ugv, self._target_pose_ugv)
+        error_pose_stamped = PoseStamped()
+        error_pose_stamped.header.stamp = rospy.Time.now()
+        error_pose_stamped.header.frame_id = "map"
+        error_pose_stamped.pose = error_pose.pose
+        self._pub_error_ugv.publish(error_pose_stamped)
 
     def handle_combined_follow_uav_current(self):
         """L'UGV suit la position actuelle de l'UAV"""
@@ -434,7 +438,7 @@ class Decision(object):
 
     def handle_combined_follow_uav_desired(self):
         """L'UGV suit le point désiré de l'UAV (sans décalage)"""
-        if hasattr(self, '_uav_desired_pose'):
+        if hasattr(self, '_uav_desired_pose') and self._uav_desired_pose is not None:
             ugv_target_pose = Pose()
             ugv_target_pose.position.x = self._uav_desired_pose.position.x
             ugv_target_pose.position.y = self._uav_desired_pose.position.y
@@ -456,7 +460,5 @@ def main():
     except Exception as e:
         rospy.logerr(f"Error in main: {e}")
 
-
-# main
 if __name__ == "__main__":
     main()
