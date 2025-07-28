@@ -22,6 +22,7 @@ class PoseRecorder:
         # État d'enregistrement
         self.is_recording = False
         self.recording_data = {}
+        self.individual_data = {}  # Nouveau: données individuelles par topic
         self.lock = threading.Lock()
         self.session_dir = None
         self.sync_buffer = {}  # Pour la synchronisation des topics
@@ -34,6 +35,7 @@ class PoseRecorder:
         # Initialiser les structures de données
         for topic in self.topic_names:
             self.recording_data[topic] = []
+            self.individual_data[topic] = []  # Nouveau: liste pour chaque topic
             self.sync_buffer[topic] = None
             
         # Subscribers pour les poses
@@ -78,6 +80,11 @@ class PoseRecorder:
                         'w': msg.pose.orientation.w
                     }
                 }
+                
+                # Nouveau: Sauvegarder individuellement chaque message
+                self.individual_data[topic_name].append(pose_data.copy())
+                
+                # Code existant pour la synchronisation
                 self.sync_buffer[topic_name] = pose_data
 
                 # Vérifier si tous les topics ont une nouvelle valeur
@@ -118,6 +125,7 @@ class PoseRecorder:
             with self.lock:
                 self.is_recording = True
                 self.recording_data = {}
+                self.individual_data = {topic: [] for topic in self.topic_names}  # Nouveau: réinitialiser
                 self.last_written_stamp = None
                 for topic in self.topic_names:
                     self.sync_buffer[topic] = None
@@ -143,26 +151,47 @@ class PoseRecorder:
             rospy.logwarn("Aucun enregistrement en cours")
 
     def save_data(self):
-        """Sauvegarder les données synchronisées dans un fichier unique"""
+        """Sauvegarder les données synchronisées et individuelles"""
         if not self.session_dir:
             rospy.logwarn("Aucune session à sauvegarder")
             return
+        
+        # Sauvegarder les données synchronisées (code existant)
         rows = self.recording_data.get('rows', [])
         filepath = os.path.join(self.session_dir, "poses_sync.json")
         with open(filepath, 'w') as f:
             json.dump(rows, f, indent=2)
         rospy.loginfo(f"pose_recorder.py : Sauvegardé {len(rows)} lignes synchronisées dans {filepath}")
 
-        # Sauvegarder un fichier de métadonnées
+        # Nouveau: Sauvegarder les données individuelles pour chaque topic
+        total_individual_msgs = 0
+        for topic_name in self.topic_names:
+            topic_data = self.individual_data[topic_name]
+            if topic_data:  # Seulement si il y a des données
+                # Nettoyer le nom du topic pour le nom de fichier
+                clean_topic_name = topic_name.replace('/', '_').lstrip('_')
+                individual_filepath = os.path.join(self.session_dir, f"{clean_topic_name}_individual.json")
+                
+                with open(individual_filepath, 'w') as f:
+                    json.dump(topic_data, f, indent=2)
+                
+                rospy.loginfo(f"pose_recorder.py : Sauvegardé {len(topic_data)} messages individuels pour {topic_name} dans {individual_filepath}")
+                total_individual_msgs += len(topic_data)
+
+        # Sauvegarder un fichier de métadonnées mis à jour
         metadata = {
             'recording_time': datetime.now().strftime("%Y%m%d_%H%M%S"),
             'topics': self.topic_names,
-            'total_rows': len(rows)
+            'total_synchronized_rows': len(rows),
+            'total_individual_messages': total_individual_msgs,
+            'individual_counts': {topic: len(self.individual_data[topic]) for topic in self.topic_names}
         }
         metadata_file = os.path.join(self.session_dir, 'metadata.json')
         with open(metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
+        
         rospy.loginfo(f"pose_recorder.py : Session sauvegardée dans: {self.session_dir}")
+        rospy.loginfo(f"pose_recorder.py : Total messages individuels: {total_individual_msgs}")
 
     def run(self):
         """Boucle principale"""
@@ -171,8 +200,9 @@ class PoseRecorder:
         while not rospy.is_shutdown():
             # Publier le statut actuel
             if self.is_recording:
-                total_msgs = len(self.recording_data.get('rows', []))
-                status_msg = f"recording - {total_msgs} messages"
+                sync_msgs = len(self.recording_data.get('rows', []))
+                individual_msgs = sum(len(self.individual_data[topic]) for topic in self.topic_names)
+                status_msg = f"recording - {sync_msgs} sync, {individual_msgs} individual"
             else:
                 status_msg = "idle"
                 

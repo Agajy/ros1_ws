@@ -7,7 +7,7 @@
   <arg name="save_dir" default="$(find vision_processing)/frames" doc="Directory to save frames" />
   <arg name="display" default="true" doc="Display images in OpenCV windows" /> -->
   <rosparam command="load" file="$(find trajectory)/config/simulation_parameters.yaml"/>
-  <arg name="in_simu" default="true" doc="Set to true for simulation (uses localhost)" />
+  <arg name="in_simu" default="false" doc="Set to true for simulation (uses localhost)" />
   <arg name="host" default="172.26.209.28" doc="TCP server IP address (ignored if in_simu is true)" />
   <arg name="host_simu" default="127.0.0.1" doc="optitrack port simulation" />
 
@@ -65,6 +65,7 @@
     <param name="uav" value="$(arg object_uav)" />
     <param name="ugv" value="$(arg object_ugv)" />
     <param name="in_simu" value="$(arg in_simu)" />
+    <param name="path_excel_file" value="$(find pd_controller)/config/output.xlsx"/>
   </node>
 
   <!-- Noeud de suivi de ligne -->
@@ -111,8 +112,8 @@
   <!-- <rosparam command="load" file="$(find pd_controller)/config/parameters.yaml"/> -->
 
   <!-- To retrieve OptiTrack data -->
-  <!-- <arg name="server" default="172.26.213.1"/> -->
-  <!-- <node pkg="vrpn_client_ros" type="vrpn_client_node" name="vrpn_client_node" output="screen">
+  <arg name="server" default="172.26.213.1"/>
+  <node pkg="vrpn_client_ros" type="vrpn_client_node" name="vrpn_client_node" output="screen">
   <rosparam subst_value="true">
       server: $(arg server)
       port: 3883
@@ -124,10 +125,12 @@
       #- FirstTracker
       #- SecondTracker
   </rosparam>
-  </node> -->
+  </node>
   
-  <!-- <node name="main_node" pkg="steering_car_pd" type="steering_car_main_node.py" output="screen">
-  </node> -->
+  <node name="main_node" pkg="steering_car_pd" type="jetcar_pd_controller.py" output="screen">
+    <param name="ugv" value="$(arg object_ugv)" />
+    <param name="in_simu" value="$(arg in_simu)" />
+  </node>
 
   <!-- <node name="trajectory_node" pkg="trajectory" type="trajectory_node.py" output="screen">
   </node> -->

@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 import math
-import numpy
+import numpy as np
 from excel_reader_class import ExcelReader
 from math import *
 import rospy
 import tf
 from std_msgs.msg import Float64, Float32, Bool
-from geometry_msgs.msg import PoseStamped, Vector3, Pose
+from geometry_msgs.msg import PoseStamped, Vector3, Pose, Quaternion
+from tf.transformations import quaternion_matrix, quaternion_from_matrix
 import tf.transformations
 import socket
 import sys
@@ -57,7 +58,7 @@ class Decision(object):
         self.line_detected_sub = rospy.Subscriber('/line_detected', Float32, self.line_detected_callback)       
 
         # Référence de trajectoire
-        path_excel_file = rospy.get_param('path_excel_file')
+        path_excel_file = rospy.get_param('~path_excel_file')
         self.reference = ExcelReader.extract_data_excel_to_array(path_excel_file).T
 
         # Poses
@@ -80,12 +81,14 @@ class Decision(object):
         self._uav_desired_pose = Pose()
         
         # Timer pour la logique principale
-        rospy.Timer(rospy.Duration(1.0/40), self.logic)
+        rospy.Timer(rospy.Duration(1.0/10), self.logic)
 
         # Créer l'interface graphique
         self.gui_thread = threading.Thread(target=self.create_and_run_gui)
         self.gui_thread.daemon = True
         self.gui_thread.start()
+        
+        self._pub_debug = rospy.Publisher(f"/pose_ugv", PoseStamped, queue_size=1)
 
         rospy.loginfo("decision.py : decision initialized with GUI")
 
@@ -175,6 +178,9 @@ class Decision(object):
             self.uav_ugv_mode = "stop"
             self.combined_mode_var.set("stop")
             self.update_status("Combined mode reset to stop (UAV stopped)")
+        if self.uav_mode == "stop":
+            self.send_zero_error_to_all(stop_uav=True, stop_ugv=False)
+
 
     def update_ugv_mode(self):
         """Mettre à jour le mode UGV"""
@@ -188,12 +194,12 @@ class Decision(object):
             self.uav_ugv_mode = "stop"
             self.combined_mode_var.set("stop")
             self.update_status("Combined mode reset to stop (UGV individual mode activated)")
-
+        if self.ugv_mode == "stop":
+            self.send_zero_error_to_all(stop_uav=False, stop_ugv=True)
     def update_combined_mode(self):
-        """Mettre à jour le mode combiné"""
+        """Mettre à jour le mode combiné UAV-UGV"""
         self.uav_ugv_mode = self.combined_mode_var.get()
         self.update_status(f"Combined mode changed to: {self.uav_ugv_mode}")
-        
         # Si on active le mode combiné, désactiver le mode UGV individuel
         if self.uav_ugv_mode != "stop":
             self.ugv_mode = "stop"
@@ -201,6 +207,7 @@ class Decision(object):
             self.way_init_ugv = False
             self._k_ugv = 0
             self.update_status("UGV individual mode reset to stop (Combined mode activated)")
+
 
     def emergency_stop(self):
         """Arrêt d'urgence"""
@@ -210,7 +217,33 @@ class Decision(object):
         self.uav_mode_var.set("stop")
         self.ugv_mode_var.set("stop")
         self.combined_mode_var.set("stop")
+        self.send_zero_error_to_all(stop_uav=True, stop_ugv=True)
         self.update_status("EMERGENCY STOP ACTIVATED!")
+    
+    def send_zero_error_to_all(self, stop_uav=True, stop_ugv=True):
+        """Envoyer une erreur de pose nulle à l'UAV et/ou l'UGV pour les arrêter"""
+        now = rospy.Time.now()
+        
+        if stop_uav:
+            error_pose_uav = PoseStamped()
+            error_pose_uav.header.stamp = now
+            error_pose_uav.header.frame_id = "map"
+            error_pose_uav.pose.position.x = 0.0
+            error_pose_uav.pose.position.y = 0.0
+            error_pose_uav.pose.position.z = 0.0
+            error_pose_uav.pose.orientation.z = 0.0
+            self._pub_error_uav.publish(error_pose_uav)
+
+        if stop_ugv:
+            error_pose_ugv = PoseStamped()
+            error_pose_ugv.header.stamp = now
+            error_pose_ugv.header.frame_id = "map"
+            error_pose_ugv.pose.position.x = 0.0
+            error_pose_ugv.pose.position.y = 0.0
+            error_pose_ugv.pose.position.z = 0.0
+            error_pose_ugv.pose.orientation.z = 0.0
+            self._pub_error_ugv.publish(error_pose_ugv)
+
 
     def state_uav_callback(self, msg):
         self._state_uav = msg.data
@@ -256,25 +289,44 @@ class Decision(object):
 
     def target_pose_ugv_callback(self, msg):
         self._target_pose_ugv = msg.pose
-        self._target_pose_ugv.position.x= -msg.pose.position.z
-        self._target_pose_ugv.position.y= msg.pose.position.x
-        self._target_pose_ugv.position.z= -msg.pose.position.y
-        self._target_pose_ugv.orientation.x = -msg.pose.orientation.z
-        self._target_pose_ugv.orientation.y = msg.pose.orientation.x
-        self._target_pose_ugv.orientation.z = -msg.pose.orientation.y
-        self._target_pose_ugv.orientation.w = msg.pose.orientation.w
-
+ 
     def line_detected_callback(self, data):
         self.line_state = True if data.data > 0 else False
 
     def aruco_detected_callback(self, msg):
         self.detection_aruco = msg.data
+    
+    def transform_pose_frame(self,pose_input):
+        # Extraction de la position originale
+        x_orig = pose_input.position.x
+        y_orig = pose_input.position.y
+        z_orig = pose_input.position.z
+        
+        # Transformation de la position selon x'=-z, y'=x, z'=-y
+        x_new = -z_orig
+        y_new = x_orig
+        z_new = -y_orig
+
+        
+        # Création de la nouvelle pose
+        pose_transformed = Pose()
+        pose_transformed.position.x = x_new
+        pose_transformed.position.y = y_new
+        pose_transformed.position.z = z_new
+        pose_transformed.orientation.x = -pose_input.orientation.z
+        pose_transformed.orientation.y = pose_input.orientation.x
+        pose_transformed.orientation.z = -pose_input.orientation.y
+        pose_transformed.orientation.w = pose_input.orientation.w
+        
+        return pose_transformed
+
 
     def vrpn_client_uav_callback(self, msg):
-        self._pose_uav = msg.pose
+        self._pose_uav = self.transform_pose_frame(msg.pose)
 
     def vrpn_client_ugv_callback(self, msg):
-        self._pose_ugv = msg.pose
+        self._pose_ugv = self.transform_pose_frame(msg.pose)
+        self._pub_debug.publish(PoseStamped(header=msg.header, pose=self._pose_ugv))
 
     def create_pose_from_reference(self, k, vehicle_pose):
         """Créer une pose à partir de la référence"""
@@ -328,7 +380,7 @@ class Decision(object):
         
             error_pose.pose.orientation.x = 0.0
             error_pose.pose.orientation.y = 0.0
-            error_pose.pose.orientation.z = (yaw_vehicle -target_pose.orientation.z)
+            error_pose.pose.orientation.z = yaw_vehicle
             error_pose.pose.orientation.w = 0.0
 
         return error_pose
@@ -411,6 +463,8 @@ class Decision(object):
             if self._k_ugv < len(self.reference[0, :]):
                 target_pose = self.create_pose_from_reference(self._k_ugv, self._pose_ugv)
                 error_pose = self.create_error_pose(self._pose_ugv, target_pose)
+                if not self.in_simu:
+                    error_pose.pose.orientation.z = -error_pose.pose.orientation.z  # Inverser l'orientation pour l'UGV car le repère framework lié à l'optittrack est orientée vers le bas pour l'uav et pas por l'ugv 
                 self._pub_error_ugv.publish(error_pose)
                 self._k_ugv += 1
             else:
@@ -434,6 +488,8 @@ class Decision(object):
         uav_target_pose.orientation = self._pose_uav.orientation
 
         error_pose = self.create_error_pose(self._pose_ugv, uav_target_pose)
+        if not self.in_simu:
+            error_pose.pose.orientation.z = -error_pose.pose.orientation.z  # Inverser l'orientation pour l'UGV car le repère framework lié à l'optittrack est orientée vers le bas pour l'uav et pas por l'ugv 
         self._pub_error_ugv.publish(error_pose)
 
     def handle_combined_follow_uav_desired(self):
@@ -446,6 +502,8 @@ class Decision(object):
             ugv_target_pose.orientation = self._uav_desired_pose.orientation
 
             error_pose = self.create_error_pose(self._pose_ugv, ugv_target_pose)
+            if not self.in_simu:
+                error_pose.pose.orientation.z = -error_pose.pose.orientation.z  # Inverser l'orientation pour l'UGV car le repère framework lié à l'optittrack est orientée vers le bas pour l'uav et pas por l'ugv 
             self._pub_error_ugv.publish(error_pose)
 
     def spin(self):
