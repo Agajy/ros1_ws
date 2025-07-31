@@ -1,3 +1,14 @@
+#!/usr/bin/env python
+
+"""
+======================================================
+ Fichier     : controller_frac.py
+ Auteur      : Aurélien Garreau
+ Créé en     : 2025
+ Description : fonction pour le controleur fractional sliding mode fait par Marcone (ne fonctionne pas encore)
+======================================================
+"""
+
 import numpy as np
 from scipy.spatial.transform import Rotation as Rot
 import numpy as np

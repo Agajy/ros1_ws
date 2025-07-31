@@ -1,4 +1,13 @@
 #!/usr/bin/env python
+
+"""
+======================================================
+ Fichier     : image_detector.py
+ Auteur      : Aurélien Garreau
+ Créé en     : 2025
+ Description : Noeud ROS pour detecter des lignes et des marqueurs ArUco
+======================================================
+"""
 import rospy
 import tf
 from std_msgs.msg import Float64, Float32, Bool
@@ -49,7 +58,7 @@ class LineAndArucoDetector:
         self.dist_coeffs = np.zeros((4, 1))  # Coefficients de distorsion
         
         # Taille réelle du marqueur ArUco en mètres
-        self.marker_size = 0.2  # 10cm
+        self.marker_size = 0.2  
         
         rospy.loginfo("Line and ArUco detector initialized.")
         rospy.spin()

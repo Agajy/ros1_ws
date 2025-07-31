@@ -1,3 +1,13 @@
+#!/usr/bin/env python
+
+"""
+======================================================
+ Fichier     : steering_car_publisher_controls_class.py
+ Auteur      : Alessandra Elisa Sindi Morando
+ Créé en     : ?
+ Description : Fonction pour le PD controleur de la jetracer pour contrôler l'UGV dans la volière.
+======================================================
+"""
 import rospy
 from std_msgs.msg import Float32
 

@@ -1,4 +1,14 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
+
+"""
+======================================================
+ Fichier     : steering_car_controler.py
+ Auteur      : Aurélien Garreau
+ Créé en     : 2025
+ Description : Noeud ROS qui reprend le controleur fractional sliding mode fait par Marcone (ne fonctionne pas encore)
+======================================================
+"""
+
 from casadi import *
 import rospy
 import numpy as np

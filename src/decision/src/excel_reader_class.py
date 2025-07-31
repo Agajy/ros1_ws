@@ -1,5 +1,14 @@
 #!/usr/bin/env python
 
+"""
+======================================================
+ Fichier     : excel_reader.py
+ Auteur      : Alessandra Elisa Sindi Morando
+ Créé en     : ?
+ Description : lire la feuille Excel et extraire les données dans un tableau numpy
+======================================================
+"""
+
 import pandas as pd
 
 class ExcelReader:

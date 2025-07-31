@@ -1,4 +1,14 @@
 #!/usr/bin/env python
+
+"""
+======================================================
+ Fichier     : prog_principal.py
+ Auteur      : Aurélien Garreau
+ Créé en     : 2025
+ Description : Noeud ROS qui selectionne la démo à réaliser pour l'ugv et l'uav (en mode TCP pour l'ugv en simulation et en mode TCP pour l'uav)
+======================================================
+"""
+
 import math
 import numpy as np
 from excel_reader_class import ExcelReader
@@ -88,9 +98,10 @@ class Decision(object):
         self.gui_thread.daemon = True
         self.gui_thread.start()
         
-        self._pub_debug = rospy.Publisher(f"/pose_ugv", PoseStamped, queue_size=1)
-
         rospy.loginfo("decision.py : decision initialized with GUI")
+
+        self.uav_first_point_done = False  # Flag for first point in follow_path_optitrack_option_wait_aruco
+        self.ugv_detection_limit = 1.0  
 
     def create_gui(self):
         """Créer l'interface graphique"""
@@ -109,8 +120,10 @@ class Decision(object):
                        value="follow_aruco", command=self.update_uav_mode).grid(row=1, column=0, sticky="w")
         ttk.Radiobutton(uav_frame, text="Follow Path OptiTrack", variable=self.uav_mode_var, 
                        value="follow_path_optitrack", command=self.update_uav_mode).grid(row=2, column=0, sticky="w")
+        ttk.Radiobutton(uav_frame, text="Follow Path OptiTrack option wait ArUco", variable=self.uav_mode_var, 
+                value="follow_path_optitrack_option_wait_aruco", command=self.update_uav_mode).grid(row=3, column=0, sticky="w")
         ttk.Radiobutton(uav_frame, text="Stop", variable=self.uav_mode_var, 
-                       value="stop", command=self.update_uav_mode).grid(row=3, column=0, sticky="w")
+                       value="stop", command=self.update_uav_mode).grid(row=4, column=0, sticky="w")
         
         # Frame pour UGV
         ugv_frame = ttk.LabelFrame(self.root, text="Contrôle UGV", padding="10")
@@ -326,7 +339,6 @@ class Decision(object):
 
     def vrpn_client_ugv_callback(self, msg):
         self._pose_ugv = self.transform_pose_frame(msg.pose)
-        self._pub_debug.publish(PoseStamped(header=msg.header, pose=self._pose_ugv))
 
     def create_pose_from_reference(self, k, vehicle_pose):
         """Créer une pose à partir de la référence"""
@@ -385,6 +397,13 @@ class Decision(object):
 
         return error_pose
 
+    def is_ugv_near_detection_limit(self):
+        """Check if UGV is near the non-detection limit from UAV"""
+        dx = self._target_pose_aruco.position.x
+        dy = self._target_pose_aruco.position.y
+        dist = math.sqrt(dx*dx + dy*dy)
+        return dist >= self.ugv_detection_limit
+
     def logic(self, event=None):
         """Logique principale de contrôle"""
         # Contrôle UAV - toujours prioritaire et indépendant
@@ -396,8 +415,30 @@ class Decision(object):
                 self.handle_uav_follow_aruco()
             elif self.uav_mode == "follow_path_optitrack":
                 self.handle_uav_follow_path_optitrack()
+            elif self.uav_mode == "follow_path_optitrack_option_wait_aruco":
+                #Go to first point of the path
+                if not self.uav_first_point_done:
+                    self._k_uav = self.nearest_point(self._pose_uav, self.reference)
+                    target_pose = self.create_pose_from_reference(self._k_uav, self._pose_uav)
+                    error_pose = self.create_error_pose(self._pose_uav, target_pose, target_pose.orientation.z)
+                    self._pub_error_uav.publish(error_pose)
+                    # Check if UAV is close enough to first point
+                    dx = self._pose_uav.position.x - target_pose.position.x
+                    dy = self._pose_uav.position.y - target_pose.position.y
+                    dist = math.sqrt(dx*dx + dy*dy)
+                    if dist < 0.1:  # seuil augmenté pour validation de l'arrivée
+                        self.uav_first_point_done = True
+                    rospy.loginfo("decision.py : UAV going to first point of path")
+                else:
+                    # Wait for ArUco detection and UGV not near detection limit
+                    if self.detection_aruco and not self.is_ugv_near_detection_limit():
+                        self.handle_uav_follow_path_optitrack()
+                    else:
+                        rospy.loginfo("decision.py : UAV waiting for ArUco detection or UGV too far")
+                        self.send_zero_error_to_all(stop_uav=True, stop_ugv=False)
         else:
             self.way_init_uav = False
+            self.uav_first_point_done = False  # Reset flag when UAV not active
 
         # Contrôle UGV - vérifier si mode combiné ou individuel
         if self._state_ugv:

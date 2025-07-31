@@ -1,11 +1,19 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
+
+"""
+======================================================
+ Fichier     : jetcar_pd_controller.py
+ Auteur      : Aurélien Garreau
+ CoAuteur    : Alessandra Elisa Sindi Morando
+ Créé en     : 2025
+ Description : Noeud ROS correspondant au PD controleur de la jetracer pour contrôler l'UGV dans la volière.
+======================================================
+"""
 from casadi import *
 import rospy
 import numpy as np
-
 from steering_car_publisher_controls_class import PublisherControls
 from steering_car_PD import SteeringCarPD
-from excel_reader_class import ExcelReader
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped, Vector3
 

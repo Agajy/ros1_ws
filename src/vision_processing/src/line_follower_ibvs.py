@@ -1,4 +1,13 @@
 #!/usr/bin/env python
+
+"""
+======================================================
+ Fichier     : line_follower.py
+ Auteur      : Aurélien Garreau
+ Créé en     : 2025
+ Description : Noeud ROS pour suivre une ligne avec IBVS
+======================================================
+"""
 import rospy
 import tf
 from std_msgs.msg import Float64, Float32, Bool

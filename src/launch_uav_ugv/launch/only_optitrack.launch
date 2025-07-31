@@ -1,9 +1,8 @@
 <?xml version="1.0"?>
-
+  <!-- Auteur : ?
+  Créé en     : ?
+  Description : Permet de lancer la communication avec l'optitrack (do not launch with vision_launcher.launch that already launch it ) -->
 <launch>
-    <!-- Load the simulation parameters -->
-    <rosparam command="load" file="$(find pd_controller)/config/parameters.yaml"/>
-
     <!-- To retrieve OptiTrack data -->
     <arg name="server" default="172.26.213.1"/>
     <node pkg="vrpn_client_ros" type="vrpn_client_node" name="vrpn_client_node" output="screen">
@@ -18,13 +17,5 @@
         #- FirstTracker
         #- SecondTracker
     </rosparam>
-    </node>
-    
-    <node name="main_node" pkg="pd_controller" type="steering_car_main_node.py" output="screen">
-    </node>
-
-    <node name="trajectory_node" pkg="trajectory" type="trajectory_node.py" output="screen">
-    </node>
-    
-    
+    </node> 
 </launch>

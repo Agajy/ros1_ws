@@ -1,4 +1,15 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
+
+"""
+======================================================
+ Fichier     : tcp_rec_command.py
+ Auteur      : Aurélien Garreau
+ Créé en     : 2025
+ Description : Decide si on utilise le TCP ou le ROS pour recevoir les commandes de pose
+              et les publier sur le topic approprié.
+              Pour l'UGV Si in_simu est True, on utilise le TCP, sinon on utilise ROS.
+======================================================
+"""
 
 import rospy
 import socket

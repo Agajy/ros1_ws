@@ -1,4 +1,14 @@
 #!/usr/bin/env python
+
+"""
+======================================================
+ Fichier     : simu_control_steering_car.py
+ Auteur      : Aurélien Garreau
+ Créé en     : 2025
+ Description : Noeud ROS pour contrôler un véhicule simulé en envoyant des commandes de direction et d'accélération
+               Simule le fonctionnement de l'UGV avec gazebo classic (l'ensemble du package n'est pas utile)
+======================================================
+"""
 import math
 import numpy
 from math import *

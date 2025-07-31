@@ -1,5 +1,13 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
+
+"""
+======================================================
+ Fichier     : pose_recorder_gui.py
+ Auteur      : Aurélien Garreau
+ Créé en     : 2025
+ Description : Interface graphique pour le noeud ROS pose_recorder, Permet de démarrer/arrêter l'enregistrement de poses
+======================================================
+"""
 
 import rospy
 import tkinter as tk

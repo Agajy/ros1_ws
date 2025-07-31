@@ -1,4 +1,14 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
+
+"""
+======================================================
+ Fichier     : tcp_optitrack.py
+ Auteur      : Aurélien Garreau
+ Créé en     : 2025
+ Description : Noeud ROS qui se connecte à un serveur TCP pour recevoir des positions d'objets
+              et les publie sur des topics ROS. (simule l'optitrack)
+======================================================
+"""
 
 import rospy
 import socket

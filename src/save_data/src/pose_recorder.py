@@ -1,5 +1,16 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
+
+"""
+======================================================
+ Fichier     : pose_recorder.py
+ Auteur      : Aurélien Garreau
+ Créé en     : 2025
+ Description : Noeud ROS pour enregistrer des poses synchronisées à partir de plusieurs topics PoseStamped.
+              Permet l'enregistrement individuel des messages et la synchronisation périodique.
+              Gère les commandes de démarrage/arrêt via un topic dédié.
+              Enregistre les données dans un dossier spécifié, avec des statistiques de synchronisation.
+======================================================
+"""
 
 import rospy
 import os
@@ -8,6 +19,7 @@ from datetime import datetime
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import String
 import threading
+import time
 
 class PoseRecorder:
     def __init__(self):
@@ -18,15 +30,18 @@ class PoseRecorder:
             '/pose1', '/pose2', '/pose3', '/pose4'
         ])
         self.output_dir = rospy.get_param('~output_dir', '/tmp/pose_recordings')
+        self.sync_timeout = rospy.get_param('~sync_timeout', 0.1)  # Timeout en secondes pour la synchronisation
+        self.sync_rate = rospy.get_param('~sync_rate', 10.0)  # Hz - fréquence d'enregistrement synchronisé
         
         # État d'enregistrement
         self.is_recording = False
         self.recording_data = {}
-        self.individual_data = {}  # Nouveau: données individuelles par topic
+        self.individual_data = {}
         self.lock = threading.Lock()
         self.session_dir = None
-        self.sync_buffer = {}  # Pour la synchronisation des topics
-        self.last_written_stamp = None
+        self.sync_buffer = {}
+        self.sync_timestamps = {}  # Timestamps pour chaque topic
+        self.last_sync_time = 0
         
         # Créer le dossier de sortie s'il n'existe pas
         if not os.path.exists(self.output_dir):
@@ -35,8 +50,9 @@ class PoseRecorder:
         # Initialiser les structures de données
         for topic in self.topic_names:
             self.recording_data[topic] = []
-            self.individual_data[topic] = []  # Nouveau: liste pour chaque topic
+            self.individual_data[topic] = []
             self.sync_buffer[topic] = None
+            self.sync_timestamps[topic] = 0
             
         # Subscribers pour les poses
         self.pose_subscribers = {}
@@ -56,9 +72,16 @@ class PoseRecorder:
             '/pose_recorder/status', String, queue_size=1
         )
         
+        # Timer pour la synchronisation périodique
+        self.sync_timer = rospy.Timer(
+            rospy.Duration(1.0 / self.sync_rate), 
+            self.sync_timer_callback
+        )
+        
         rospy.loginfo(f"pose_recorder.py : initialisé")
         rospy.loginfo(f"pose_recorder.py : Topics surveillés: {self.topic_names}")
         rospy.loginfo(f"pose_recorder.py : Dossier de sortie: {self.output_dir}")
+        rospy.loginfo(f"pose_recorder.py : Timeout de sync: {self.sync_timeout}s, Rate: {self.sync_rate}Hz")
         rospy.loginfo("pose_recorder.py : Envoyez 'start' ou 'stop' sur /pose_recorder/command")
         
     def pose_callback(self, msg, topic_name):
@@ -81,27 +104,48 @@ class PoseRecorder:
                     }
                 }
                 
-                # Nouveau: Sauvegarder individuellement chaque message
+                # Sauvegarder individuellement chaque message
                 self.individual_data[topic_name].append(pose_data.copy())
                 
-                # Code existant pour la synchronisation
+                # Mettre à jour le buffer de synchronisation avec la dernière valeur
                 self.sync_buffer[topic_name] = pose_data
+                self.sync_timestamps[topic_name] = time.time()
 
-                # Vérifier si tous les topics ont une nouvelle valeur
-                if all(self.sync_buffer[t] is not None for t in self.topic_names):
-                    # Synchronisation : on prend le plus grand timestamp
-                    sync_stamp = max(self.sync_buffer[t]['timestamp'] for t in self.topic_names)
-                    # Éviter d'écrire deux fois pour le même timestamp
-                    if self.last_written_stamp != sync_stamp:
-                        sync_row = {
-                            t: self.sync_buffer[t] for t in self.topic_names
-                        }
-                        # Ajout à la liste d'enregistrements (ligne synchronisée)
-                        self.recording_data.setdefault('rows', []).append(sync_row)
-                        self.last_written_stamp = sync_stamp
-                    # Réinitialiser le buffer pour la prochaine synchronisation
-                    for t in self.topic_names:
-                        self.sync_buffer[t] = None
+    def sync_timer_callback(self, event):
+        """Callback du timer pour l'enregistrement synchronisé périodique"""
+        if not self.is_recording:
+            return
+            
+        with self.lock:
+            current_time = time.time()
+            sync_row = {}
+            
+            # Pour chaque topic, prendre la dernière valeur disponible
+            for topic in self.topic_names:
+                if self.sync_buffer[topic] is not None:
+                    # Vérifier si la donnée n'est pas trop ancienne
+                    age = current_time - self.sync_timestamps[topic]
+                    if age <= self.sync_timeout:
+                        sync_row[topic] = self.sync_buffer[topic].copy()
+                    else:
+                        # Donnée trop ancienne, marquer comme manquante
+                        sync_row[topic] = None
+                        rospy.logwarn_throttle(5, f"Topic {topic} trop ancien ({age:.3f}s)")
+                else:
+                    # Aucune donnée disponible pour ce topic
+                    sync_row[topic] = None
+            
+            # Enregistrer même si certains topics manquent
+            if any(sync_row[t] is not None for t in self.topic_names):
+                # Au moins un topic a des données
+                sync_row['sync_timestamp'] = current_time
+                self.recording_data.setdefault('rows', []).append(sync_row)
+            
+            # Optionnel : nettoyer les buffers trop anciens
+            for topic in self.topic_names:
+                if (self.sync_buffer[topic] is not None and 
+                    current_time - self.sync_timestamps[topic] > self.sync_timeout * 2):
+                    self.sync_buffer[topic] = None
 
     def command_callback(self, msg):
         """Callback pour les commandes start/stop"""
@@ -125,10 +169,11 @@ class PoseRecorder:
             with self.lock:
                 self.is_recording = True
                 self.recording_data = {}
-                self.individual_data = {topic: [] for topic in self.topic_names}  # Nouveau: réinitialiser
-                self.last_written_stamp = None
+                self.individual_data = {topic: [] for topic in self.topic_names}
+                self.last_sync_time = time.time()
                 for topic in self.topic_names:
                     self.sync_buffer[topic] = None
+                    self.sync_timestamps[topic] = 0
                 # Créer le dossier de session
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 self.session_dir = os.path.join(self.output_dir, f"recording_{timestamp}")
@@ -156,35 +201,51 @@ class PoseRecorder:
             rospy.logwarn("Aucune session à sauvegarder")
             return
         
-        # Sauvegarder les données synchronisées (code existant)
+        # Sauvegarder les données synchronisées
         rows = self.recording_data.get('rows', [])
         filepath = os.path.join(self.session_dir, "poses_sync.json")
         with open(filepath, 'w') as f:
             json.dump(rows, f, indent=2)
-        rospy.loginfo(f"pose_recorder.py : Sauvegardé {len(rows)} lignes synchronisées dans {filepath}")
+        
+        # Calculer les statistiques de synchronisation
+        total_sync_points = len(rows)
+        missing_stats = {topic: 0 for topic in self.topic_names}
+        for row in rows:
+            for topic in self.topic_names:
+                if row.get(topic) is None:
+                    missing_stats[topic] += 1
+        
+        rospy.loginfo(f"pose_recorder.py : Sauvegardé {total_sync_points} points synchronisés dans {filepath}")
+        for topic, missing_count in missing_stats.items():
+            if missing_count > 0:
+                rospy.loginfo(f"pose_recorder.py : {topic}: {missing_count}/{total_sync_points} points manquants ({100*missing_count/total_sync_points:.1f}%)")
 
-        # Nouveau: Sauvegarder les données individuelles pour chaque topic
+        # Sauvegarder les données individuelles pour chaque topic
         total_individual_msgs = 0
         for topic_name in self.topic_names:
             topic_data = self.individual_data[topic_name]
-            if topic_data:  # Seulement si il y a des données
-                # Nettoyer le nom du topic pour le nom de fichier
+            if topic_data:
                 clean_topic_name = topic_name.replace('/', '_').lstrip('_')
                 individual_filepath = os.path.join(self.session_dir, f"{clean_topic_name}_individual.json")
                 
                 with open(individual_filepath, 'w') as f:
                     json.dump(topic_data, f, indent=2)
                 
-                rospy.loginfo(f"pose_recorder.py : Sauvegardé {len(topic_data)} messages individuels pour {topic_name} dans {individual_filepath}")
+                rospy.loginfo(f"pose_recorder.py : Sauvegardé {len(topic_data)} messages individuels pour {topic_name}")
                 total_individual_msgs += len(topic_data)
 
-        # Sauvegarder un fichier de métadonnées mis à jour
+        # Sauvegarder les métadonnées avec statistiques de synchronisation
         metadata = {
             'recording_time': datetime.now().strftime("%Y%m%d_%H%M%S"),
             'topics': self.topic_names,
-            'total_synchronized_rows': len(rows),
+            'sync_settings': {
+                'rate_hz': self.sync_rate,
+                'timeout_s': self.sync_timeout
+            },
+            'total_synchronized_points': total_sync_points,
             'total_individual_messages': total_individual_msgs,
-            'individual_counts': {topic: len(self.individual_data[topic]) for topic in self.topic_names}
+            'individual_counts': {topic: len(self.individual_data[topic]) for topic in self.topic_names},
+            'missing_data_stats': missing_stats
         }
         metadata_file = os.path.join(self.session_dir, 'metadata.json')
         with open(metadata_file, 'w') as f:

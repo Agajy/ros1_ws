@@ -1,4 +1,13 @@
 #!/usr/bin/env python
+
+"""
+======================================================
+ Fichier     : ibvs_tag.py
+ Auteur      : Aurélien Garreau
+ Créé en     : 2025
+ Description : Noeud ROS pour suivre un tag ArUco avec IBVS
+======================================================
+"""
 import rospy
 import tf
 from std_msgs.msg import Float64, Float32, Bool
@@ -243,10 +252,10 @@ class IBVS:
         # yaw = np.clip(yaw, -max_rotation, max_rotation)
         
         q = tf.transformations.quaternion_from_euler(roll, pitch, yaw)
-        command_pose.orientation.x = q[0]
-        command_pose.orientation.y = q[1]
-        command_pose.orientation.z = q[2]
-        command_pose.orientation.w = q[3]
+        command_pose.orientation.x = 0.0
+        command_pose.orientation.y = 0.0
+        command_pose.orientation.z = yaw
+        command_pose.orientation.w = 0.0
 
         return command_pose
 

@@ -1,7 +1,13 @@
 #!/usr/bin/env python
+
 """
-TCP Image Stream Client - ROS1 Node
-Supports GRAY, RGB, RGBA, YUV, CMYK formats
+======================================================
+ Fichier     : image_tcp_client.py
+ Auteur      : Aurélien Garreau
+ Créé en     : 2025
+ Description : Noeud ROS pour recevoir un flux d'images via TCP et les publier sur des topics ROS
+              dans différents formats (GRAY, RGB, RGBA, YUV, CMYK).
+======================================================
 """
 
 import rospy

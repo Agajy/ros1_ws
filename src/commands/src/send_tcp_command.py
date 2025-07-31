@@ -1,4 +1,14 @@
 #!/usr/bin/env python
+
+"""
+======================================================
+ Fichier     : send_tcp_command.py
+ Auteur      : Aurélien Garreau
+ Créé en     : 2025
+ Description : Noeud ROS qui envoie des commandes TCP à un serveur pour contrôler un objet (UGV ou Drone) dans flair.
+======================================================
+"""
+
 import math
 import numpy
 from math import *
